@@ -10,8 +10,11 @@ Unfortunately I am unable to recreate the conda environment from a requirements.
 
 
 `conda create --name vislang-domain-exploration python=3.8`
+
 `conda activate vislang-domain-exploration`
+
 `pip install git+https://github.com/openai/CLIP.git`
+
 `pip install opencv-python`
 
 
