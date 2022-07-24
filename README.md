@@ -18,7 +18,7 @@ Unfortunately I am unable to recreate the conda environment from a requirements.
 `pip install opencv-python`
 
 
-Note that the versions won't be fixed. For version info, look at `requirements_pip.txt` and `requirements_conda.txt`.
+Note that these instructions don't specify version. For version info, look at `requirements_pip.txt` and `requirements_conda.txt`.
 
 ## Exploratory Probing
 
