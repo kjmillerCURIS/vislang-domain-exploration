@@ -25,3 +25,5 @@ Note that these instructions don't specify version. For version info, look at `r
 As a first step, let's try and explore the embedding space of CLIP with some handcrafted inputs, just to see how it represents domains.
 
 ### 7/22/2022 - Start of domain-probing (some development done in Google Colab before)
+
+Idea is to take 
