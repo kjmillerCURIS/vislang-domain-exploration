@@ -15,7 +15,7 @@ Unfortunately I am unable to recreate the conda environment from a requirements.
 
 `pip install git+https://github.com/openai/CLIP.git`
 
-`pip install opencv-python`
+`pip install opencv-python scipy matplotlib pandas`
 
 
 Note that these instructions don't specify version. For version info, look at `requirements_pip.txt` and `requirements_conda.txt`.
