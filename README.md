@@ -26,4 +26,4 @@ As a first step, let's try and explore the embedding space of CLIP with some han
 
 ### 7/22/2022 - Start of domain-probing (some development done in Google Colab before)
 
-Idea is to take 
+NOTE TO SELF: DO NOT UNDER ANY CIRCUMSTANCES USE THE IMAGENET VALIDATION SET AS TRAINING DATA FOR A "SOTA" DISENTANGLEMENT-LEARNING ALGO!!!
