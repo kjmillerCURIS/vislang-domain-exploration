@@ -40,7 +40,7 @@ We will do the following augmentations:
 
 * sketch/drawing (fixed-sized blur (default), then Otsu to get a hint on how many edge-pixels there should be, then multiply that number by a fixed factor (probably 1.2), then try a bunch of Canny's with fixed ratio (default) between high and low threshold, and pick the one that has the closest edge-density. Then, just make the edges black and everything else white).
 
-* fisheye (remap with `(x, y) *= (1 + K * r^2)` where (x, y) are centered and divided by shorter dimension before computing r. Start with K=0.2 and tune it by hand)
+* fisheye (remap with `(x, y) *= (1 + K1 * r^2 + K2 * r^4 + K3 * r^6)` where (x, y) are centered and divided by shorter dimension before computing r. Start with K1=K2=K3=3.2 and tune it by hand. Crop to compensate for any undesired downscaling)
 
 * posterize
 
@@ -63,3 +63,5 @@ We will do the following augmentations:
 * upside-down
 
 * low-res (down by 4x, then back up)
+
+Examples of these augmentations can be seen in example_augs folder.
