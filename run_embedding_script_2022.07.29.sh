@@ -1,7 +1,8 @@
 #!/bin/bash -l
 
 #$ -P ivc-ml
-#$ -l h_rt=24:00:00
+#$ -pe omp 2
+#$ -l h_rt=11:59:59
 #$ -l gpus=1
 #$ -N compute_CLIP_embeddings
 #$ -j y

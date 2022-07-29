@@ -11,10 +11,11 @@ from non_image_data_utils import load_non_image_data
 from general_aug_utils import generate_aug_dict
 
 DEBUG = False
-DEBUG_NUM_PTS = 180 #number of embeddings
+DEBUG_NUM_PTS = 640 #number of embeddings
 SAVE_FREQ = 1000 #number of embeddings
 CHUNK_SIZE = 10000 #number of embeddings
 CLIP_MODEL_TYPE = 'ViT-B/32'
+IMAGE_BATCH_SIZE = 6
 
 #in case I don't trust qsub
 def write_to_log_file(msg):
@@ -68,17 +69,25 @@ def compute_CLIP_image_embeddings(image_paths, aug_dict, model, preprocess, devi
             continue
 
         numI = cv2.imread(image_path)
-        imgs = []
+        imgs_list = [[]]
         for augID in tqdm(sorted(aug_dict.keys())):
             aug_fn = aug_dict[augID]['image_aug_fn']
             numIaug = aug_fn(numI)
             img = Image.fromarray(cv2.cvtColor(numIaug, cv2.COLOR_BGR2RGB))
-            imgs.append(img)
+            if len(imgs_list[-1]) >= IMAGE_BATCH_SIZE:
+                imgs_list.append([])
 
-        imgs = torch.cat([preprocess(img).unsqueeze(0) for img in imgs]).to(device)
-        with torch.no_grad():
-            embeddings = model.encode_image(imgs).cpu().numpy()
+            imgs_list[-1].append(img)
 
+        embeddings_list = []
+        for imgs in imgs_list:
+            imgs_tnsr = torch.cat([preprocess(img).unsqueeze(0) for img in imgs]).to(device)
+            with torch.no_grad():
+                embeddings = model.encode_image(imgs_tnsr).cpu().numpy()
+
+            embeddings_list.append(embeddings)
+
+        embeddings = np.concatenate(embeddings_list)
         for augID, embedding in zip(sorted(aug_dict.keys()), embeddings):
             embedding_dict['image'][image_base][augID] = embedding
 
