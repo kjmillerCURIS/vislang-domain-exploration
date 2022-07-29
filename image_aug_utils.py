@@ -22,7 +22,8 @@ FISHEYE_SCALE_COMPENSATION_FACTOR = 1.4
 POSTERIZATION_BITS = 2
 SKETCH_BLUR_KSIZE_A = 7 #for the Otsu part
 SKETCH_BLUR_KSIZE_B = 3 #for the actual Canny part
-SKETCH_EDGE_DENSITY_MULTIPLIER = 1.4
+#SKETCH_EDGE_DENSITY_MULTIPLIER = 1.4
+SKETCH_EDGE_DENSITY_MULTIPLIER = 3.5
 SKETCH_CANNY_HIGH_THRESHOLDS = [25.0, 50.0, 75.0, 100.0, 125.0, 150.0, 175.0, 200.0, 225.0]
 SKETCH_CANNY_RATIO = 0.5
 TILT_MIN_ANGLE = 10.0
@@ -262,7 +263,7 @@ def aug_foggy(numI):
     return albumentations.augmentations.transforms.RandomFog(fog_coef_lower=coef, fog_coef_upper=coef, alpha_coef=alpha, always_apply=True)(image=numI)['image']
 
 #convenience function to generate a dictionary mapping the augmentationID to augmentation function
-def generate_aug_dict():
+def generate_image_aug_dict():
     aug_dict = {}
     aug_dict['noop'] = aug_noop
     aug_dict['make_background_white'] = aug_make_background_white
@@ -286,7 +287,7 @@ def generate_aug_dict():
 
 #call this to get an idea of what the augmentations look like
 if __name__ == '__main__':
-    aug_dict = generate_aug_dict()
+    aug_dict = generate_image_aug_dict()
     image_dir = random.choice(sorted(glob.glob('../vislang-domain-exploration-data/ILSVRC2012_val/*')))
     image = random.choice(sorted(glob.glob(os.path.join(image_dir, '*.JPEG'))))
     out_dir = 'example_augs'
