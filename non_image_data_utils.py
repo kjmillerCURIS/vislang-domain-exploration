@@ -25,7 +25,7 @@ def load_class2words_dict(base_dir):
 #class2words_dict will map class to list of words
 #class2filenames_dict will map class to a list of filenames (full paths)
 #this has only been tested on ImageNet validation data
-def load_non_image_data(base_dir):
+def load_non_image_data(base_dir, image_classes_only=True):
     words_dict = {}
     class2filenames_dict = {}
 
@@ -40,6 +40,9 @@ def load_non_image_data(base_dir):
         for image in images:
             image_base = os.path.basename(image)
             words_dict[image_base] = copy.deepcopy(words) #just to be safe
+
+    if image_classes_only:
+        class2words_dict = {classID : class2words_dict[classID] for classID in sorted(class2filenames_dict.keys())}
 
     return words_dict, class2words_dict, class2filenames_dict
 
