@@ -36,6 +36,7 @@ def load_non_image_data(base_dir, image_classes_only=True):
         class2filenames_dict[my_class] = []
         words = class2words_dict[my_class]
         images = sorted(glob.glob(os.path.join(my_dir, '*.*')))
+        images = [os.path.abspath(image) for image in images]
         class2filenames_dict[my_class] = images
         for image in images:
             image_base = os.path.basename(image)
