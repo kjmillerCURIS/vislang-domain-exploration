@@ -2,7 +2,7 @@
 
 #$ -P ivc-ml
 #$ -pe omp 1
-#$ -l h_rt=2:59:59
+#$ -l h_rt=0:59:59
 #$ -N robustness_recovery_analysis
 #$ -j y
 #$ -m ea

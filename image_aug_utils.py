@@ -20,12 +20,16 @@ CLOSEUP_FACTOR = 2.0
 FISHEYE_KS = [3.2, 3.2, 3.2]
 FISHEYE_SCALE_COMPENSATION_FACTOR = 1.4
 POSTERIZATION_BITS = 2
+'''
 SKETCH_BLUR_KSIZE_A = 7 #for the Otsu part
 SKETCH_BLUR_KSIZE_B = 3 #for the actual Canny part
 #SKETCH_EDGE_DENSITY_MULTIPLIER = 1.4
 SKETCH_EDGE_DENSITY_MULTIPLIER = 3.5
 SKETCH_CANNY_HIGH_THRESHOLDS = [25.0, 50.0, 75.0, 100.0, 125.0, 150.0, 175.0, 200.0, 225.0]
 SKETCH_CANNY_RATIO = 0.5
+'''
+SKETCH_BLUR_KSIZE = 3
+SKETCH_LAPLACIAN_KSIZE = 3
 TILT_MIN_ANGLE = 10.0
 TILT_MAX_ANGLE = 20.0
 LOW_RES_FACTOR = 0.25
@@ -83,7 +87,6 @@ def cheap_segment(numI):
 
     return (mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD)
 
-
 #this is an augmentation
 #just returns a copy of the image
 def aug_noop(numI):
@@ -116,6 +119,23 @@ def aug_make_background_blue(numI):
     numI[~mask,:] = (255,0,0)
     return numI
 
+#this is an augmentation
+#do a Laplacian filter, then subtract the absolute value from 255
+def aug_sketchify(numI):
+    ksize = SKETCH_BLUR_KSIZE
+    laplacian_ksize = SKETCH_LAPLACIAN_KSIZE
+    numIgray = cv2.cvtColor(numI, cv2.COLOR_BGR2GRAY)
+    numIblur = cv2.GaussianBlur(numIgray, (ksize, ksize), 0)
+    numIlaplacian = cv2.Laplacian(numIblur, cv2.CV_16S, ksize=laplacian_ksize)
+    numIlaplacian = cv2.convertScaleAbs(numIlaplacian) #this apparently takes the absolute value AND scales and converts it to uint8
+
+    #subtract from 255 to get a black-on-white drawing
+    numIaug = 255 * np.ones_like(numI)
+    numIaug = numIaug - numIlaplacian[:,:,np.newaxis]
+
+    return numIaug
+
+'''
 #this is an augmentation
 #use Otsu to get a hint on what the edge-density should be like
 #then adjust Canny threshold to get closest to that target
@@ -150,6 +170,7 @@ def aug_sketchify(numI):
     numIaug[edge_mask,:] = (0,0,0)
 
     return numIaug
+'''
 
 #this is an augmentation
 #use (x,y) *= 1 + K * r^2 and remap
@@ -290,7 +311,7 @@ if __name__ == '__main__':
     aug_dict = generate_image_aug_dict()
     image_dir = random.choice(sorted(glob.glob('../vislang-domain-exploration-data/ILSVRC2012_val/*')))
     image = random.choice(sorted(glob.glob(os.path.join(image_dir, '*.JPEG'))))
-    out_dir = 'example_augs'
+    out_dir = 'example_augs_better'
     os.makedirs(out_dir, exist_ok=True)
     numI = cv2.imread(image)
     for augID in tqdm(sorted(aug_dict.keys())):
