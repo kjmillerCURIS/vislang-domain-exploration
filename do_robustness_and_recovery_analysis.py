@@ -46,8 +46,10 @@ def compute_zeroshot_preds(class2filenames_dict, class2words_dict, aug_dict, ima
                     k = (classID, className, augID, text_aug_template)
                     classifiers[augID][classID].append(text_embedding_dict[k])
 
-            M = len(classifiers[augID][classID])
-            classifiers[augID][classID] = sum(classifiers[augID][classID]) / M
+            #average and renormalize
+            v = np.mean(classifiers[augID][classID], axis=0)
+            v = v / np.linalg.norm(v)
+            classifiers[augID][classID] = v
 
         W = np.zeros((len(classIDs), embedding_size))
         for i, classID in enumerate(classIDs):
@@ -154,7 +156,9 @@ def compute_cosine_similarities(class2filenames_dict, class2words_dict, aug_dict
                     k = (classID, className, augID, text_aug_template)
                     text_embeddings.append(text_embedding_dict[k])
 
-            pos_text_embeddings[augID][classID] = sum(text_embeddings) / len(text_embeddings)
+            v = np.mean(text_embeddings, axis=0)
+            v = v / np.linalg.norm(v)
+            pos_text_embeddings[augID][classID] = v
 
     #build average negative embeddings for computing D_dict, E_dict, F_dict
     #neg_text_embeddings will be indexed by augID, and then by gt classID
@@ -163,24 +167,17 @@ def compute_cosine_similarities(class2filenames_dict, class2words_dict, aug_dict
         #make lists so we can drop something into them for each "other" class
         neg_text_embeddings[augID] = {classID : [] for classID in sorted(class2filenames_dict.keys())}
         for otherClassID in sorted(class2filenames_dict.keys()):
-            text_embeddings = []
-            for className in class2words_dict[otherClassID]:
-                for text_aug_template in aug_dict[augID]['text_aug_templates']:
-                    k = (otherClassID, className, augID, text_aug_template)
-                    text_embeddings.append(text_embedding_dict[k])
-
-            text_embedding = sum(text_embeddings) / len(text_embeddings)
             for classID in sorted(class2filenames_dict.keys()):
                 if classID == otherClassID:
                     continue
 
-                neg_text_embeddings[augID][classID].append(text_embedding)
+                neg_text_embeddings[augID][classID].append(pos_text_embeddings[augID][otherClassID])
 
         #now average across the "other" classes
+        #no need to renormalize here
+        #technically we're trying to average over (image_base, otherClassID) pairs
         for classID in sorted(class2filenames_dict.keys()):
-            M = len(neg_text_embeddings[augID][classID])
-            assert(M == len(class2filenames_dict) - 1)
-            neg_text_embeddings[augID][classID] = sum(neg_text_embeddings[augID][classID]) / M
+            neg_text_embeddings[augID][classID] = np.mean(neg_text_embeddings[augID][classID], axis=0)
 
     #gonna build all 6 dicts at once
     #iterate through each class
