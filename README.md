@@ -17,7 +17,10 @@ Unfortunately I am unable to recreate the conda environment from a requirements.
 
 `pip install opencv-python scipy matplotlib pandas albumentations ipython`
 
+`conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch`
 
+
+[TODO: UPDATE requirement FILES!!!]
 Note that these instructions don't specify version. For version info, look at `requirements_pip.txt` and `requirements_conda.txt`.
 
 ## Exploratory Probing

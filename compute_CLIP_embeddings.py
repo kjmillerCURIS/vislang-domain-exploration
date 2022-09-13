@@ -16,12 +16,15 @@ DEBUG = False
 DEBUG_NUM_PTS = 180 #number of embeddings
 SAVE_FREQ = 1000 #number of embeddings
 CHUNK_SIZE = 10008 #number of embeddings (made it multiple of IMAGE_BATCH_SIZE to minimize unnecessary file IO)
-CLIP_MODEL_TYPE = 'ViT-B/32'
+DEFAULT_CLIP_MODEL_TYPE = 'ViT-B/32'
 IMAGE_BATCH_SIZE = 18 #just keep all the augs in one batch for now
 
 BAD_IMAGE_BASES = ['ILSVRC2012_val_00002258.JPEG',
                     'ILSVRC2012_val_00012796.JPEG',
-                    'ILSVRC2012_val_00028315.JPEG']
+                    'ILSVRC2012_val_00028315.JPEG',
+                    'n02783161_4703.JPEG',
+                    'n03838899_2257.JPEG',
+                    'n03838899_8045.JPEG']
 
 #in case I don't trust qsub
 def write_to_log_file(msg):
@@ -40,7 +43,7 @@ def get_device():
         write_to_log_file('I am on the CPU!')
         return 'cpu'
 
-def compute_CLIP_image_embeddings(image_paths, aug_dict, model, preprocess, device, embedding_dict_filename_prefix):
+def compute_CLIP_image_embeddings(image_paths, aug_dict, model, preprocess, device, embedding_dict_filename_prefix, num_parts, part_start_index):
     debug_counter = 0
     
     #setup chunk-writer
@@ -54,8 +57,10 @@ def compute_CLIP_image_embeddings(image_paths, aug_dict, model, preprocess, devi
 
     my_chunk_writer = ChunkWriter(CHUNK_SIZE, SAVE_FREQ, 'image', all_keys, embedding_dict_filename_prefix)
 
+    start_index = int(round(part_start_index * len(image_paths) / (1.0 * num_parts)))
+
     #now the main iteration
-    for image_path in tqdm(image_paths):
+    for image_path in tqdm(image_paths[start_index:]):
         if os.path.basename(image_path) in BAD_IMAGE_BASES:
             continue
 
@@ -72,6 +77,7 @@ def compute_CLIP_image_embeddings(image_paths, aug_dict, model, preprocess, devi
             continue
 
         numI = cv2.imread(image_path)
+        print(image_base)
 
         #split up augmented images into batches
         imgs_list = [[]]
@@ -108,7 +114,7 @@ def compute_CLIP_image_embeddings(image_paths, aug_dict, model, preprocess, devi
 
     my_chunk_writer.save()
 
-def compute_CLIP_text_embeddings(class2words_dict, aug_dict, model, device, embedding_dict_filename_prefix):
+def compute_CLIP_text_embeddings(class2words_dict, aug_dict, model, device, embedding_dict_filename_prefix, num_parts, part_start_index):
     debug_counter = 0
 
     #setup chunk-writer
@@ -124,8 +130,11 @@ def compute_CLIP_text_embeddings(class2words_dict, aug_dict, model, device, embe
 
     my_chunk_writer = ChunkWriter(CHUNK_SIZE, SAVE_FREQ, 'text', all_keys, embedding_dict_filename_prefix)
 
+    classIDs = sorted(class2words_dict.keys())
+    start_index = int(round(part_start_index * len(classIDs) / (1.0 * num_parts)))
+
     #main iteration
-    for classID in tqdm(sorted(class2words_dict.keys())):
+    for classID in tqdm(classIDs[start_index:]):
         for className in class2words_dict[classID]:
             for augID in tqdm(sorted(aug_dict.keys())):
                 for text_aug_template in aug_dict[augID]['text_aug_templates']:
@@ -146,9 +155,12 @@ def compute_CLIP_text_embeddings(class2words_dict, aug_dict, model, device, embe
 
     my_chunk_writer.save()
 
-def compute_CLIP_embeddings(base_dir, embedding_dict_filename_prefix):
+def compute_CLIP_embeddings(base_dir, embedding_dict_filename_prefix, image_only=0, model_type=DEFAULT_CLIP_MODEL_TYPE, num_parts=1, part_start_index=0):
     base_dir = os.path.abspath(os.path.expanduser(base_dir))
     os.makedirs(os.path.dirname(embedding_dict_filename_prefix), exist_ok=True)
+    image_only = int(image_only)
+    num_parts = int(num_parts)
+    part_start_index = int(part_start_index)
 
     device = get_device()
 
@@ -158,13 +170,14 @@ def compute_CLIP_embeddings(base_dir, embedding_dict_filename_prefix):
         image_paths.extend(class2filenames_dict[classID])
 
     aug_dict = generate_aug_dict()
-    model, preprocess = clip.load(CLIP_MODEL_TYPE, device=device)
+    model, preprocess = clip.load(model_type, device=device)
 
-    compute_CLIP_image_embeddings(image_paths, aug_dict, model, preprocess, device, embedding_dict_filename_prefix)
-    compute_CLIP_text_embeddings(class2words_dict, aug_dict, model, device, embedding_dict_filename_prefix)
+    compute_CLIP_image_embeddings(image_paths, aug_dict, model, preprocess, device, embedding_dict_filename_prefix, num_parts, part_start_index)
+    if not image_only:
+        compute_CLIP_text_embeddings(class2words_dict, aug_dict, model, device, embedding_dict_filename_prefix, num_parts, part_start_index)
 
 def usage():
-    print('Usage: python compute_CLIP_embeddings.py <base_dir> <embedding_dict_filename_prefix>')
+    print('Usage: python compute_CLIP_embeddings.py <base_dir> <embedding_dict_filename_prefix> [<image_only>] [<model_type>] [<num_parts>] [<part_start_index>]')
 
 if __name__ == '__main__':
     compute_CLIP_embeddings(*(sys.argv[1:]))

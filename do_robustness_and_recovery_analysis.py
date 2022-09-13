@@ -19,8 +19,16 @@ def normalize_entire_dict(embedding_dict):
     return embedding_dict
 
 #returns top-MAX_TOP_K-scoring classIDs, in order
+#classifier can either be a matrix (equivalent to clf.coef_) or it can have attributes "coef_" and optionally "intercept_"
+#in either case, we will NOT assume any further preprocessing like standardization
 def run_pred(image_embedding, classifier, classIDs):
-    cossims = np.squeeze(np.dot(classifier, image_embedding[:,np.newaxis]))
+    if isinstance(classifier, np.ndarray):
+        cossims = np.squeeze(np.dot(classifier, image_embedding[:,np.newaxis]))
+    elif hasattr(classifier, 'coef_'):
+        cossims = np.squeeze(np.dot(classifier.coef_, image_embedding[:,np.newaxis]))
+        if hasattr(classifier, 'intercept_'):
+            cossims = cossims + classifier.intercept_
+
     top_indices = np.argsort(-cossims)[:MAX_TOP_K]
     return [classIDs[i] for i in top_indices]
 
