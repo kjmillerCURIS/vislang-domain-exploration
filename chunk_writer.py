@@ -89,23 +89,23 @@ class ChunkWriter:
         if self.save_counter >= self.save_freq:
             self.save()
 
-    def get(self, k, promote_to_float64=True):
+    def get(self, k, target_dtype='float64'):
         self.__update_cur_chunk(k)
         v = self.cur_chunk[k]
         if 'torch' in str(v.dtype): #I forgot to do this step for some of the embeddings in the past, so gotta correct for it!
             v = np.squeeze(v.numpy())
 
-        if promote_to_float64: #makes downstream computations more precise. otherwise we'd be using float16 for most/all intermediate steps
-            v = v.astype('float64')
+        if target_dtype != 'float16': #makes downstream computations more precise. otherwise we'd be using float16 for most/all intermediate steps
+            v = v.astype(target_dtype)
 
         return v
 
-    def load_entire_dict(self, promote_to_float64=True):
+    def load_entire_dict(self, target_dtype='float64'):
         all_keys = sorted(self.chunk_index_map.keys())
         d = {}
         for k in tqdm(all_keys):
             if self.contains(k):
-                v = self.get(k, promote_to_float64=promote_to_float64)
+                v = self.get(k, target_dtype=target_dtype)
                 d[k] = v
 
         return d
