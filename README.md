@@ -21,6 +21,12 @@ Unfortunately I am unable to recreate the conda environment from a requirements.
 
 `pip install pyarrow fastparquet`
 
+`pip install img2dataset` (I don't remember if I ran this command. But img2dataset was on my system, so either I installed it or someone/something else did.)
+
+`conda install -c conda-forge pytorch-lightning lightning-bolts`
+
+Then, go to this line in the img2dataset code on your system (https://github.com/rom1504/img2dataset/blob/c0f14c9020003483f9b30b960317187f9a6c6b97/img2dataset/reader.py#L72) and change it to use '\t' as the delimiter (instead of the default ','). 
+
 [TODO: UPDATE requirement FILES!!!]
 Note that these instructions don't specify version. For version info, look at `requirements_pip.txt` and `requirements_conda.txt`.
 

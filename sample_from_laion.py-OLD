@@ -1,0 +1,126 @@
+import os
+import sys
+import glob
+import numpy as np
+import pickle
+from tqdm import tqdm
+from experiment_params.param_utils import get_params_key
+from experiment_params.balance_params import grab_params
+from compute_CLIP_embeddings import write_to_log_file
+
+'''
+This will pick the top N laion images for each domain based on their domain log prob.
+This will create a directory structure <experiment_dir>/laion_sample/[<domain_num>-<domain_name>]
+Each domain directory will have the following files:
+- "image_urls.txt" which is a plaintext list of image urls
+- "image_bases.pkl" which is a pickle of a list of image bases (same order as image_urls.txt)
+- "image_base_to_caption.pkl" which is a pickle of a dict mapping image bases to captions
+'''
+
+NUM_WORKERS = 9
+
+#return a list of lists of image-bases
+def choose_samples(log_probs_dict, num_images_per_domain):
+    write_to_log_file('choose_samples: sort image bases...')
+    image_bases = sorted(log_probs_dict.keys())
+    write_to_log_file('choose_samples: build log_probs...')
+    log_probs = np.array([log_probs_dict[image_base] for image_base in image_bases])
+    write_to_log_file('choose_samples: transpose...')
+    log_probs = np.ascontiguousarray(log_probs.T) #this will make each row a domain
+
+    def choose_sample_indices_one_domain(log_probs_one_domain):
+        return np.argsort(log_probs_one_domain)[-num_images_per_domain:][::-1]
+
+    write_to_log_file('choose_samples: setup pool...')
+    fandifarm = multiprocessing.Pool(NUM_WORKERS)
+    write_to_log_file('choose_samples: pool.map...')
+    sample_indices = fandifarm.map(choose_sample_indices_one_domain, log_probs) #this will process each row separately
+    write_to_log_fiel('choose_samples: grab image-bases using indices...')
+    return [[image_bases[i] for i in sample_indices_one_domain] for sample_indices_one_domain in sample_indices]
+
+def save_samples(samples, url_and_caption_dict, domain_names, experiment_dir):
+    sample_base_dir = os.path.join(experiment_dir, 'laion_sample')
+    os.makedirs(sample_base_dir, exist_ok=True)
+    for i, (samples_one_domain, domain_name) in tqdm(enumerate(zip(samples, domain_names))):
+        write_to_log_file('saving sample for domian %d...'%(i))
+        sample_dir = os.path.join(sample_base_dir, '%03d-%s'%(i, domain_name))
+        os.makedirs(sample_dir, exist_ok=True)
+        write_to_log_file('dumping samples_one_domain...')
+        with open(os.path.join(sample_dir, 'image_bases.pkl'), 'wb') as f:
+            pickle.dump(samples_one_domain, f)
+
+        write_to_log_file('done dumping samples_one_domain')
+        write_to_log_file('writing urls...')
+        with open(os.path.join(sample_dir, 'image_urls.txt'), 'w') as f:
+            f.write('\n'.join([url_and_caption_dict[image_base][0] for image_base in samples_one_domain]))
+
+        write_to_log_file('done writing urls')
+        write_to_log_file('dumping image_base_to_caption...')
+        with open(os.path.join(sample_dir, 'image_base_to_caption.pkl'), 'wb') as f:
+            pickle.dump({image_base : url_and_caption_dict[image_base][1] for image_base in samples_one_domain}, f)
+
+        write_to_log_file('done dumping image_base_to_caption')
+        write_to_log_file('done saving sample for domain %d'%(i))
+
+#returns a dict mapping each image-base to a (url, caption) tuple
+def load_url_and_caption_dict(laion_base_dir):
+    write_to_log_file('building url_and_caption_dict...')
+    url_and_caption_dict = {}
+    for dict_filename in sorted(glob.glob(os.path.join(laion_base_dir, 'image_level_info_dict-*.pkl'))):
+        write_to_log_file('loading dict "%s"...'%(dict_filename))
+        with open(dict_filename, 'rb') as f:
+            image_level_info_dict = pickle.load(f)
+
+        for image_base in tqdm(sorted(image_level_info_dict.keys())):
+            url_and_caption_dict[image_base] = (image_level_info_dict[image_base]['caption'], image_level_info_dict[image_base]['url'])
+
+    write_to_log_file('done building url_and_caption_dict')
+    return url_and_caption_dict
+
+#returns log_probs_dict, max_shard_index
+#this is used by at least one other script (compute_domain_log_probs_for_laion.py), even if it's not used by this script
+def load_log_probs_dict(experiment_dir):
+    log_probs_dict_filenames = sorted(glob.glob(os.path.join(experiment_dir, 'laion_log_probs_dict-*.pkl')))
+    log_probs_dict = {}
+    max_shard_index = -1
+    for log_probs_dict_filename in log_probs_dict_filenames:
+        write_to_log_file('loading from "%s"...'%(log_probs_dict_filename))
+        shard_index = int(os.path.splitext(os.path.basename(log_probs_dict_filename))[0].split('-')[-1])
+        max_shard_index = max(shard_index, max_shard_index)
+        with open(log_probs_dict_filename, 'rb') as f:
+            sub_dict = pickle.load(f)
+
+        write_to_log_file('done loading from "%s"'%(log_probs_dict_filename))
+        for image_base in sorted(sub_dict.keys()):
+            log_probs_dict[image_base] = sub_dict[image_base]
+
+    return log_probs_dict, max_shard_index
+
+def sample_from_laion(experiment_dir, laion_base_dir):
+    experiment_dir = os.path.expanduser(experiment_dir)
+    laion_base_dir = os.path.expanduser(laion_base_dir)
+
+    params_key = get_params_key(experiment_dir)
+    p = grab_params(params_key)
+
+    with open(os.path.join(experiment_dir, 'train_domain_filter.pkl'), 'rb') as f:
+        domain_names = pickle.load(f)
+
+    write_to_log_file('loading url_and_caption_dict...')
+    url_and_caption_dict = load_url_and_caption_dict(laion_base_dir)
+    write_to_log_file('done loading url_and_caption_dict')
+    write_to_log_file('loading log_probs_dict...')
+    log_probs_dict, _ = load_log_probs_dict(experiment_dir)
+    write_to_log_file('done loading log_probs_dict')
+    write_to_log_file('choosing samples...')
+    samples = choose_samples(log_probs_dict, p.num_laion_images_per_domain)
+    write_to_log_file('done choosing samples')
+    write_to_log_file('saving samples...')
+    save_samples(samples, url_and_caption_dict, domain_names, experiment_dir)
+    write_to_log_file('done saving samples')
+
+def usage():
+    print('Usage: python sample_from_laion.py <experiment_dir> <laion_base_dir>')
+
+if __name__ == '__main__':
+    sample_from_laion(*(sys.argv[1:]))

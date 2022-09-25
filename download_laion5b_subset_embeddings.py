@@ -50,7 +50,7 @@ def download_laion5b_subset_embeddings(dst_dir):
     metadata_dir = os.path.join(dst_dir, 'Metadata')
     os.makedirs(img_emb_dir, exist_ok=True)
     os.makedirs(metadata_dir, exist_ok=True)
-    info_filename = os.path.join(dst_dir, 'info.pkl') #this will have a set of (laion_type, file_num) pairs that have been downloaded
+    info_filename = os.path.join(dst_dir, 'chunk_level_info.pkl') #this will have a set of (laion_type, file_num) pairs that have been downloaded
     if os.path.exists(info_filename):
         with open(info_filename, 'rb') as f:
             info = pickle.load(f)

@@ -74,7 +74,12 @@ class EmbeddingDomainAndClassDataset(torch.utils.data.Dataset):
             if my_class not in class_filter:
                 continue
 
+            embedding_size = len(embedding_dict[k])
             self.samples.append({'embedding' : embedding_dict[k], 'domain' : torch.tensor(domain_filter.index(domain), dtype=torch.long), 'class' : torch.tensor(class_filter.index(my_class), dtype=torch.long)})
+
+        self.domain_filter = domain_filter
+        self.class_filter = class_filter
+        self.embedding_size = embedding_size
 
     def __getitem__(self, idx):
         return self.samples[idx]
