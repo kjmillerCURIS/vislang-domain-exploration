@@ -36,6 +36,30 @@ class TextTrainedDomainBalanceParams:
         #sampling from laion
         self.num_laion_images_per_domain = 140000
 
+        #clip finetuning
+        self.clip_model_type = 'ViT-B/32'
+        self.clip_optimizer_type = 'AdamW'
+        self.clip_weight_decay = 0.2 #I'm questioning whether to do weight decay when finetuning
+        self.clip_learning_rate = 5e-4
+        self.clip_beta1 = 0.9
+        self.clip_beta2 = 0.98
+        self.clip_epsilon = 1e-6
+        self.clip_scheduler_type = 'LinearWarmupCosineAnnealingLR'
+        self.clip_max_epochs = 10
+        self.clip_warmup_epochs = 1 #for now we'll always make this 10% of the max epochs
+        self.clip_batch_size = 1024
+        self.clip_oversize_batch_mode = True
+        self.clip_image_minibatch_size = 64
+        self.clip_text_minibatch_size = 64
+        self.clip_fractional_checkpoints = [1/1024, 1/512, 1/256, 1/128, 1/64, 1/32, 1/16, 1/8, 1/4, 1/2, 3/4, 5/4, 3/2, 7/4]
+
+class TextTrainedDomainBalanceSmallBatchParams(TextTrainedDomainBalanceParams):
+    def __init__(self):
+        super(TextTrainedDomainBalanceSmallBatchParams, self).__init__()
+        self.data_compatible_params_keys = ['TextTrainedDomainBalanceParams']
+        self.clip_batch_size = 64
+        self.clip_oversize_batch_mode = False
+
 class TextTrainedDomainBalanceLinearClassifierParams(TextTrainedDomainBalanceParams):
     def __init__(self):
         super(TextTrainedDomainBalanceLinearClassifierParams, self).__init__()

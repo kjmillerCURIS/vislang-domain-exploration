@@ -28,6 +28,7 @@ BAD_IMAGE_BASES = ['ILSVRC2012_val_00002258.JPEG',
 
 #in case I don't trust qsub
 def write_to_log_file(msg):
+    print(msg)
     f = open('meow.txt', 'a')
     f.write(msg + '\n')
     f.close()
@@ -43,9 +44,18 @@ def get_device():
         write_to_log_file('I am on the CPU!')
         return 'cpu'
 
-def compute_CLIP_image_embeddings(image_paths, aug_dict, model, preprocess, device, embedding_dict_filename_prefix, num_parts, part_start_index):
+#can optionally pass in models and embedding_dict_filename_prefixes as lists, else as single items
+def compute_CLIP_image_embeddings(image_paths, aug_dict, models, preprocess, device, embedding_dict_filename_prefixes, num_parts, part_start_index, has_encode_fn=True):
     debug_counter = 0
-    
+
+    if not isinstance(models, list):
+        models = [models]
+
+    if not isinstance(embedding_dict_filename_prefixes, list):
+        embedding_dict_filename_prefixes = [embedding_dict_filename_prefixes]
+
+    assert(len(models) == len(embedding_dict_filename_prefixes))
+
     #setup chunk-writer
     all_keys = []
     for image_path in image_paths:
@@ -55,7 +65,7 @@ def compute_CLIP_image_embeddings(image_paths, aug_dict, model, preprocess, devi
         for augID in sorted(aug_dict.keys()):
             all_keys.append((os.path.basename(image_path), augID))
 
-    my_chunk_writer = ChunkWriter(CHUNK_SIZE, SAVE_FREQ, 'image', all_keys, embedding_dict_filename_prefix)
+    my_chunk_writers = [ChunkWriter(CHUNK_SIZE, SAVE_FREQ, 'image', all_keys, embedding_dict_filename_prefix) for embedding_dict_filename_prefix in embedding_dict_filename_prefixes]
 
     start_index = int(round(part_start_index * len(image_paths) / (1.0 * num_parts)))
 
@@ -68,7 +78,7 @@ def compute_CLIP_image_embeddings(image_paths, aug_dict, model, preprocess, devi
         all_augs_already_computed = True
         for augID in sorted(aug_dict.keys()):
             k = (image_base, augID)
-            if not my_chunk_writer.contains(k):
+            if not all([my_chunk_writer.contains(k) for my_chunk_writer in my_chunk_writers]):
                 all_augs_already_computed = False
                 break
 
@@ -91,31 +101,47 @@ def compute_CLIP_image_embeddings(image_paths, aug_dict, model, preprocess, devi
             imgs_list[-1].append(img)
 
         #now inference each batch
-        embeddings_list = []
+        embeddings_lists = [[] for i in range(len(models))]
         for imgs in imgs_list:
             imgs_tnsr = torch.cat([preprocess(img).unsqueeze(0) for img in imgs]).to(device)
-            with torch.no_grad():
-                embeddings = model.encode_image(imgs_tnsr).cpu().numpy()
+            for model, embeddings_list in zip(models, embeddings_lists):
+                with torch.no_grad():
+                    if has_encode_fn:
+                        embeddings = model.encode_image(imgs_tnsr).cpu().numpy()
+                    else:
+                        embeddings = model(imgs_tnsr.type(model.conv1.weight.dtype)).cpu().numpy()
 
-            embeddings_list.append(embeddings)
+                embeddings_list.append(embeddings)
 
-        #concatenate the outputs
-        embeddings = np.concatenate(embeddings_list)
-        assert(len(embeddings) == len(aug_dict))
-        debug_counter += len(embeddings)
+        for embeddings_list, my_chunk_writer in zip(embeddings_lists, my_chunk_writers):
 
-        #put each key-value pair into chunk-writer
-        for augID, embedding in zip(sorted(aug_dict.keys()), embeddings):
-            k = (image_base, augID)
-            my_chunk_writer.insert(k, embedding)
+            #concatenate the outputs
+            embeddings = np.concatenate(embeddings_list)
+            assert(len(embeddings) == len(aug_dict))
+            debug_counter += len(embeddings)
 
-        if DEBUG and debug_counter >= DEBUG_NUM_PTS:
-            break
+            #put each key-value pair into chunk-writer
+            for augID, embedding in zip(sorted(aug_dict.keys()), embeddings):
+                k = (image_base, augID)
+                my_chunk_writer.insert(k, embedding)
 
-    my_chunk_writer.save()
+            if DEBUG and debug_counter >= DEBUG_NUM_PTS:
+                break
 
-def compute_CLIP_text_embeddings(class2words_dict, aug_dict, model, device, embedding_dict_filename_prefix, num_parts, part_start_index):
+    for my_chunk_writer in my_chunk_writers:
+        my_chunk_writer.save()
+
+#can optionally pass in models and embedding_dict_filename_prefixes as lists, else as single items
+def compute_CLIP_text_embeddings(class2words_dict, aug_dict, models, device, embedding_dict_filename_prefixes, num_parts, part_start_index, has_encode_fn=True):
     debug_counter = 0
+
+    if not isinstance(models, list):
+        models = [models]
+
+    if not isinstance(embedding_dict_filename_prefixes, list):
+        embedding_dict_filename_prefixes = [embedding_dict_filename_prefixes]
+
+    assert(len(models) == len(embedding_dict_filename_prefixes))
 
     #setup chunk-writer
     all_keys = []
@@ -128,7 +154,7 @@ def compute_CLIP_text_embeddings(class2words_dict, aug_dict, model, device, embe
                     k = (classID, className, augID, text_aug_template)
                     all_keys.append(k)
 
-    my_chunk_writer = ChunkWriter(CHUNK_SIZE, SAVE_FREQ, 'text', all_keys, embedding_dict_filename_prefix)
+    my_chunk_writers = [ChunkWriter(CHUNK_SIZE, SAVE_FREQ, 'text', all_keys, embedding_dict_filename_prefix) for embedding_dict_filename_prefix in embedding_dict_filename_prefixes]
 
     classIDs = sorted(class2words_dict.keys())
     start_index = int(round(part_start_index * len(classIDs) / (1.0 * num_parts)))
@@ -139,21 +165,29 @@ def compute_CLIP_text_embeddings(class2words_dict, aug_dict, model, device, embe
             for augID in tqdm(sorted(aug_dict.keys())):
                 for text_aug_template in aug_dict[augID]['text_aug_templates']:
                     k = (classID, className, augID, text_aug_template)
-                    if my_chunk_writer.contains(k):
-                        print('found existing text embedding for "%s", skipping computation'%(str(k)))
+                    if all([my_chunk_writer.contains(k) for my_chunk_writer in my_chunk_writers]):
                         continue
 
                     text_query = text_aug_template % className
                     text_query = clip.tokenize([text_query]).to(device)
-                    with torch.no_grad():
-                        embedding = np.squeeze(model.encode_text(text_query).cpu().numpy())
+                    for model, my_chunk_writer in zip(models, my_chunk_writers):
+                        if my_chunk_writer.contains(k):
+                            print('found existing text embedding for "%s", skipping computation'%(str(k)))
+                            continue
 
-                    my_chunk_writer.insert(k, embedding)
-                    debug_counter += 1
-                    if DEBUG and debug_counter >= DEBUG_NUM_PTS:
-                        break
+                        with torch.no_grad():
+                            if has_encode_fn:
+                                embedding = np.squeeze(model.encode_text(text_query).cpu().numpy())
+                            else:
+                                embedding = np.squeeze(model(text_query).cpu().numpy())
 
-    my_chunk_writer.save()
+                        my_chunk_writer.insert(k, embedding)
+                        debug_counter += 1
+                        if DEBUG and debug_counter >= DEBUG_NUM_PTS:
+                            break
+
+    for my_chunk_writer in my_chunk_writers:
+        my_chunk_writer.save()
 
 def compute_CLIP_embeddings(base_dir, embedding_dict_filename_prefix, image_only=0, model_type=DEFAULT_CLIP_MODEL_TYPE, num_parts=1, part_start_index=0):
     base_dir = os.path.abspath(os.path.expanduser(base_dir))

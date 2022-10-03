@@ -3,6 +3,7 @@ import sys
 import glob
 import numpy as np
 import pickle
+from PIL import Image
 import torch
 from tqdm import tqdm
 import clip
@@ -12,8 +13,8 @@ from experiment_params.balance_params import grab_params
 
 class LaionImageAndTextDatasetOneDomain(torch.utils.data.Dataset):
 
-    def __make_image_preprocessor(self, backbone_type):
-        _, self.preprocess = clip.load(backbone_type, device='cpu')
+    def __make_image_preprocessor(self, clip_model_type):
+        _, self.preprocess = clip.load(clip_model_type, device='cpu')
 
     def __get_image_filename(self, t):
         num_str = '%09d'%(t)
@@ -44,12 +45,13 @@ class LaionImageAndTextDatasetOneDomain(torch.utils.data.Dataset):
         self.domain_dir = get_domain_dir(experiment_dir, domain_index)
         params_key = get_params_key(experiment_dir)
         p = grab_params(params_key)
-        self.__make_image_preprocessor(p.backbone_type)
-        self.__load_text_str_list()
+        self.__make_image_preprocessor(p.clip_model_type)
+        self.__load_image_filename_list_and_text_str_list()
 
     #if image is missing, we'll move forward until we find an index that has an image
+    #use fp16 for the image for now
     def __getitem__(self, idx):
-        return {'image' : self.preprocess(Image.open(self.image_filename_list[idx])), 'text' : clip.tokenize([self.text_str_list[idx]])[0]}
+        return {'image' : self.preprocess(Image.open(self.image_filename_list[idx])).type(torch.float16), 'text' : clip.tokenize([self.text_str_list[idx]], truncate=True)[0]}
 
     def __len__(self):
         return len(self.text_str_list)

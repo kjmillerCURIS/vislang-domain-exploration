@@ -1,8 +1,11 @@
 import os
 import sys
+import clip
+import numpy as np
 import torch
-from torch import nn
+import torch.nn as nn
 import torch.nn.functional as F
+from compute_CLIP_embeddings import write_to_log_file
 
 #copied from https://github.com/KaiyangZhou/CoOp/blob/14a64f468d7cb976ffa7fbcce2591312c4e42aca/trainers/coop.py#L37
 class TextEncoder(nn.Module):
@@ -25,17 +28,19 @@ class TextEncoder(nn.Module):
 
         # x.shape = [batch_size, n_ctx, transformer.width]
         # take features from the eot embedding (eot_token is the highest number in each sequence)
-        x = x[torch.arange(x.shape[0]), tokenized_prompts.argmax(dim=-1)] @ self.text_projection
+        x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.text_projection
 
         return x
 
 #will grab (pretrained) backbones from OpenAI CLIP model (see https://github.com/KaiyangZhou/CoOp/blob/14a64f468d7cb976ffa7fbcce2591312c4e42aca/trainers/coop.py#L37)
-def grab_clip_backbones(params):
-    p = params
-    clip_model, _ = clip.load(p.backbone_type, device='cuda')
+#also return temperature
+#using float16 for now...
+def grab_clip_backbones(clip_model_type):
+    clip_model, _ = clip.load(clip_model_type, device='cuda')
     image_backbone = clip_model.visual
     text_backbone = TextEncoder(clip_model)
-    return image_backbone, text_backbone
+    temperature = np.exp(-(clip_model.logit_scale.item()))
+    return image_backbone, text_backbone, temperature
 
 #a generator
 #will yield input_minibatch, start_index, end_index
@@ -125,7 +130,7 @@ def add_to_backbone_gradients(image_backbone, text_backbone, image_batch, text_b
 
     orig_image_mode = image_backbone.training
     orig_text_mode = text_backbone.training
-    assert(text_backbone.training == orig_mode)
+    assert(orig_image_mode == orig_text_mode)
 
     #gather image and text embeddings (without any autograd)
     image_embeddings = gather_embeddings_nograd(image_backbone, image_batch, image_minibatch_size)
@@ -149,22 +154,30 @@ def add_to_backbone_gradients(image_backbone, text_backbone, image_batch, text_b
 #yes, I could return a loss and call "backwards", but I like having the same/similar API
 def add_to_backbone_gradients_smallbatch(image_backbone, text_backbone, image_batch, text_batch, temperature, loss_weight):
     #compute embeddings
+    write_to_log_file('about to compute image embeddings...')
     image_embeddings = image_backbone(image_batch)
+    write_to_log_file('done image embeddings. about to compute text embeddings...')
     text_embeddings = text_backbone(text_batch)
 
     #get cosine similarities
+    write_to_log_file('done text embeddings. about to compute cossims...')
     cossims = compute_cossims(image_embeddings, text_embeddings)
 
     #get logits
+    write_to_log_file('done cossims. about to compute logits_per_image...')
     logits_per_image = cossims / temperature
+    write_to_log_file('done logits_per_image. about to compute logits_per_text...')
     logits_per_text = logits_per_image.t()
+    write_to_log_file('done logits per text. about to compute loss...')
 
     #compute CE loss
     labels = torch.arange(image_embeddings.size(dim=0), device=image_embeddings.device)
     loss = (F.cross_entropy(logits_per_image, labels) + F.cross_entropy(logits_per_text, labels)) / 2.0
     loss = loss_weight * loss
+    write_to_log_file('done loss. about to backward...')
 
     #backpropagate ALL the way down!
     loss.backward()
+    write_to_log_file('done backward')
 
     return loss.detach()
