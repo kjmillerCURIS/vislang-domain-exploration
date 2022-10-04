@@ -37,7 +37,7 @@ As a first step, let's try and explore the embedding space of CLIP with some han
 
 ### 7/22/2022 - 9/30/2022  
   
-(Note: progress update from 9/30/2022 lab meeting is (here)[https://docs.google.com/presentation/d/1SZ7vQfwyh6qUUWqppIAmY5XV4HLbUdbH/edit?usp=sharing&ouid=114870409551880709293&rtpof=true&sd=true])  
+(Note: progress update from 9/30/2022 lab meeting is [here](https://docs.google.com/presentation/d/1SZ7vQfwyh6qUUWqppIAmY5XV4HLbUdbH/edit?usp=sharing&ouid=114870409551880709293&rtpof=true&sd=true))  
   
 (Note: Look in the `job_scripts` folder to see bash scripts that run the python scripts described below. That should give a good record of the experiments that happened and how to replicate them.)  
   
