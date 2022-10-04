@@ -37,6 +37,8 @@ As a first step, let's try and explore the embedding space of CLIP with some han
 
 ### 7/22/2022 - 9/30/2022  
   
+(Note: progress update from 9/30/2022 lab meeting is (here)[https://docs.google.com/presentation/d/1SZ7vQfwyh6qUUWqppIAmY5XV4HLbUdbH/edit?usp=sharing&ouid=114870409551880709293&rtpof=true&sd=true])  
+  
 (Note: Look in the `job_scripts` folder to see bash scripts that run the python scripts described below. That should give a good record of the experiments that happened and how to replicate them.)  
   
 **Probing - data fundamentals**  
@@ -75,6 +77,13 @@ As a first step, let's try and explore the embedding space of CLIP with some han
 * Take a look at `download_images_from_laion.py`, which uses img2dataset to do the actual downloading. It's surprisingly fast. It only took half an hour for SCC to download 2.3M images (across 6 jobs with 4 CPU cores per job). I guess it's worth noting that I had img2dataset save the images as short_side=224, default jpg quality (95%), keep_ratio.  
   
 **Domain Generalization - finetuning CLIP**  
-* The main script for finetuning is MEOW  
+* The main script for finetuning is `finetune_clip_on_domain_pure_batches.py`, which uses `laion_image_and_text_dataset_one_domain.py` as its custom Dataset. It uses `dataloader_multiplexer.py` to (randomly) rotate between the domains when sampling batches. It uses `clip_training_utils.py` to do the loss and backprop stuff, including how to handle a large batches by breaking them down into smaller minibatches in a way that still gets the gradient correct. `clip_training_utils.py` also provides the `grab_clip_backbones()` function, which can grab the image and text backbones from the OpenAI checkpoint, which is useful for both training and inference.  
+* (Note: OpenAI checkpoint is natively in float16 (I'm 90% sure). For now, I finetune and inference it in float16. The Nature paper seems to get away with finetuning in float16, so hopefully that's not a crazy idea...)  
   
+**Domain Generalization - prediction and evaluation**  
+* Evaluate on augmented ImageNet1K validation images, and try zero-shot predictions with both "standard" text template and own-domain text template. Haven't implemented evaluation with "official" CLIP texts yet.  
+* Can evaluate on any saved checkpoint, including "fractional" checkpoints, which is useful because currently the results SUCK by the end of even the first epoch, but they do have a slight improvement, like ~0.8%, *very* early on...  
+* First step is to embed the images and texts with the finetuned backbones. Use `inference_clip_checkpoints.py` for this.  
+* Then, run zero-shot classification and compute accuracy. Use `evaluate_zeroshot_with_checkpoints.py` for this.  
+* Finally, plot the results with `make_clip_finetuning_plots.py`  
   
