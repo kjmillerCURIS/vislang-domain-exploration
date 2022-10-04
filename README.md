@@ -30,48 +30,15 @@ Then, go to this line in the img2dataset code on your system (https://github.com
 [TODO: UPDATE requirement FILES!!!]
 Note that these instructions don't specify version. For version info, look at `requirements_pip.txt` and `requirements_conda.txt`.
 
-## Exploratory Probing
+## Exploratory Probing and Domain Generalization
 
 As a first step, let's try and explore the embedding space of CLIP with some handcrafted inputs, just to see how it represents domains.
 
-### 7/22/2022 - Start of domain-probing (some development done in Google Colab before)
+### 7/22/2022 - 9/30/2022  
+  
+** Probing - data fundamentals **  
+* For probing (and the initial DG attempt), we create 18 different domains by applying 17 different augmentations to images and describing them in text.  
+* `image_aug_utils.py` handles the image side, and `text_aug_utils.py` handles the text side. `general_aug_utils.py` calls on both of these to handle both sides.  
+* For probing (and testing of initial DG attempt), we apply our augmentations to the ImageNet1K validation set. We also use the ImageNet1K training set for linear probing. For accessing this dataset, please see `non_image_data_utils.py`, specifically the function `load_non_image_data()`. For `base_dir` you should pass in the path to `ILSVRC2012_val` or `ILSVRC_train`. Each of these folders should have a file inside called `words.txt`, which can be gotten [here](https://github.com/seshuad/IMagenet/blob/master/tiny-imagenet-200/words.txt).  
+* Meow.  
 
-NOTE TO SELF: DO NOT UNDER ANY CIRCUMSTANCES USE THE IMAGENET VALIDATION SET AS TRAINING DATA FOR A "SOTA" DISENTANGLEMENT-LEARNING ALGO!!!
-
-(Also note: you technically could do disentanglement-learning with only-images or only-text...oh, and for the "don't collapse" loss, you could just try and reconstruct the original embedding, probably with some VAE-noising-type strategy to make sure we're not "hiding" any reconstruction info)
-
-We will do the following augmentations:
-
-* white background
-
-* black background
-
-* blue background
-
-* sketch/drawing (fixed-sized blur (default), then Otsu to get a hint on how many edge-pixels there should be, then multiply that number by a fixed factor (probably 1.2), then try a bunch of Canny's with fixed ratio (default) between high and low threshold, and pick the one that has the closest edge-density. Then, just make the edges black and everything else white).
-
-* fisheye (remap with `(x, y) *= (1 + K1 * r^2 + K2 * r^4 + K3 * r^6)` where (x, y) are centered and divided by shorter dimension before computing r. Start with K1=K2=K3=3.2 and tune it by hand. Crop to compensate for any undesired downscaling)
-
-* posterize
-
-* grayscale
-
-* sepia (albumentations.augmentations.transforms.ToSepia) (these may have some overlap in possible prompts)
-
-* Gaussian blur (ksize=15)
-
-* dimming (multiply by 0.5)
-
-* brighting (mulitply by 1.5)
-
-* closeup (2x)
-
-* tilted (+/- 10-20 degrees)
-
-* sideways
-
-* upside-down
-
-* low-res (down by 4x, then back up)
-
-Examples of these augmentations can be seen in example_augs folder.
