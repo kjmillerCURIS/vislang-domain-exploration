@@ -40,5 +40,11 @@ As a first step, let's try and explore the embedding space of CLIP with some han
 * For probing (and the initial DG attempt), we create 18 different domains by applying 17 different augmentations to images and describing them in text.  
 * `image_aug_utils.py` handles the image side, and `text_aug_utils.py` handles the text side. `general_aug_utils.py` calls on both of these to handle both sides.  
 * For probing (and testing of initial DG attempt), we apply our augmentations to the ImageNet1K validation set. We also use the ImageNet1K training set for linear probing. For accessing this dataset, please see `non_image_data_utils.py`, specifically the function `load_non_image_data()`. For `base_dir` you should pass in the path to `ILSVRC2012_val` or `ILSVRC_train`. Each of these folders should have a file inside called `words.txt`, which can be gotten [here](https://github.com/seshuad/IMagenet/blob/master/tiny-imagenet-200/words.txt).  
-* Meow.  
-
+  
+**Probing - CLIP embeddings and ChunkWriter**  
+* `compute_CLIP_embeddings.py` will compute the CLIP embeddings for all the augmented images and all the textual descriptions of the augmentations (paired with the classes). There's a flag that can make it compute only image embeddings, and a way to make it start at a particular place (so you could run lots of processes in parallel and have each one start from a different place, skipping over stuff that's already been done).  
+* `chunk_writer.py` will take care of reading *and* writing an embedding dict in shards. You make one for images, and/or one for text. The one catch is that you do have to provide all the keys in advance, so it can figure out which shard each key goes into. I guess one advantage of this is that you can access entries for just one key or a few keys, without having to load all the shards.  
+  
+**Probing - analysis**
+* this is a big one...  
+* meow  
