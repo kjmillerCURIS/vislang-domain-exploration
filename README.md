@@ -32,9 +32,12 @@ Note that these instructions don't specify version. For version info, look at `r
 
 ## Exploratory Probing and Domain Generalization
 
-As a first step, let's try and explore the embedding space of CLIP with some handcrafted inputs, just to see how it represents domains.
+As a first step, let's try and explore the embedding space of CLIP with some handcrafted inputs, just to see how it represents domains. And let's try out one initial idea at improving the DG performance of CLIP.  
+
 
 ### 7/22/2022 - 9/30/2022  
+  
+(Note: Look in the `job_scripts` folder to see bash scripts that run the python scripts described below. That should give a good record of the experiments that happened and how to replicate them.)  
   
 **Probing - data fundamentals**  
 * For probing (and the initial DG attempt), we create 18 different domains by applying 17 different augmentations to images and describing them in text.  
@@ -46,5 +49,9 @@ As a first step, let's try and explore the embedding space of CLIP with some han
 * `chunk_writer.py` will take care of reading *and* writing an embedding dict in shards. You make one for images, and/or one for text. The one catch is that you do have to provide all the keys in advance, so it can figure out which shard each key goes into. I guess one advantage of this is that you can access entries for just one key or a few keys, without having to load all the shards.  
   
 **Probing - analysis**
-* this is a big one...  
-* meow  
+* `do_robustness_and_recovery_analysis.py` will compute the decrease in cosine similarity and zero-shot accuracy when augmenting the image, and the recovery when describing those augmentations in text. Functions like `compute_zeroshot_preds()` and `is_it_correct()` are also used by the initial DG idea for prediction/evaluation.  
+* `do_official_CLIP_zeroshot_analysis.py` (with the help of `CLIP_paper_official_zeroshot_text_utils.py`) does the zeroshot decrease analysis using the "official" CLIP text embeddings, which are an average of embeddings with a diverse set of text templates.  
+* For linear probing analysis, take a look at `fit_linear_probes.py` and `evaluate_linear_probes.py`.  
+* For entanglement analysis, take a look at `do_subspace_analysis.py`.  
+* Most/all of these analysis scripts save their results as dicts in `.pkl` files. In order to turn these into plots and tables, take a look at `tablify_robustness_and_recovery_stats_dict.py`, `tablify_official_CLIP_zeroshot_stats_dict.py`, `tablify_linearprobe_stats_dict.py`, `tablify_subspace_stats_dict.py`, `make_robustness_plots.py`, `make_linearprobe_plot.py`, and `make_subspace_plots.py`. Most/all of these use `plot_and_table_utils.py`.  
+  
