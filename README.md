@@ -55,3 +55,16 @@ As a first step, let's try and explore the embedding space of CLIP with some han
 * For entanglement analysis, take a look at `do_subspace_analysis.py`.  
 * Most/all of these analysis scripts save their results as dicts in `.pkl` files. In order to turn these into plots and tables, take a look at `tablify_robustness_and_recovery_stats_dict.py`, `tablify_official_CLIP_zeroshot_stats_dict.py`, `tablify_linearprobe_stats_dict.py`, `tablify_subspace_stats_dict.py`, `make_robustness_plots.py`, `make_linearprobe_plot.py`, and `make_subspace_plots.py`. Most/all of these use `plot_and_table_utils.py`.  
   
+**Domain Generalization - LAION setup**  
+* Idea was to use text embeddings to train a domain classifier, then use it to sample domain-pure subsets from LAION (using the provided LAION image embeddings). Fine-tune OpenAI CLIP checkpoint with domain-pure LAION batches.  
+* First step is to download image embeddings and metadata of a very large subset of LAION. Do this by picking shards at random to get a total of 250M datapoints. Same proportion of LAION-en, LAION-multi, LAION-nolang. Use `download_laion5b_subset_embeddings.py`.  
+* Simplify the metadata into a (sharded) info dict, using `make_laion_image_level_info_dict.py`.  
+  
+**Domain Generalization - config**  
+* See `experiment_params/balance_params.py` for config classes. An instance of one of these classes will carry all the config stuff. `grab_params()` can construct one of these instances given its name (the "params_key"). See `experiment_params/param_utils.py` for utility functions related to this.  
+  
+**Domain Generalization - domain classifier**  
+* `train_domain_classifier.py` will train a domain classifier given texts describing the domains (and classes of objects). It uses `embedding_domain_and_class_dataset.py` for a custom training Dataset.  
+* To benchmark on augmented ImageNet1K validation images, take a look at   
+* sdfsdf  
+  
