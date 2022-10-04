@@ -36,7 +36,7 @@ As a first step, let's try and explore the embedding space of CLIP with some han
 
 ### 7/22/2022 - 9/30/2022  
   
-** Probing - data fundamentals **  
+**Probing - data fundamentals**  
 * For probing (and the initial DG attempt), we create 18 different domains by applying 17 different augmentations to images and describing them in text.  
 * `image_aug_utils.py` handles the image side, and `text_aug_utils.py` handles the text side. `general_aug_utils.py` calls on both of these to handle both sides.  
 * For probing (and testing of initial DG attempt), we apply our augmentations to the ImageNet1K validation set. We also use the ImageNet1K training set for linear probing. For accessing this dataset, please see `non_image_data_utils.py`, specifically the function `load_non_image_data()`. For `base_dir` you should pass in the path to `ILSVRC2012_val` or `ILSVRC_train`. Each of these folders should have a file inside called `words.txt`, which can be gotten [here](https://github.com/seshuad/IMagenet/blob/master/tiny-imagenet-200/words.txt).  
