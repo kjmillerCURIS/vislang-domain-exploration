@@ -12,6 +12,7 @@ from tqdm import tqdm
 from experiment_params.balance_params import grab_params
 from experiment_params.param_utils import validate_params_key, get_params_key
 from embedding_domain_and_class_dataset import EmbeddingDomainAndClassDataset
+from compute_CLIP_embeddings import write_to_log_file
 
 class DomainClassifierModel(nn.Module):
 
@@ -66,13 +67,17 @@ def load_model_and_domain_names(experiment_dir, embedding_size, device='cpu'):
     model.load_state_dict(checkpoint['model_state_dict'])
     return model, domain_names
 
-def get_train_dataset(params, embedding_dict_filename_prefix):
+def get_train_dataset(params, embedding_dict_filename_prefix, image_base_dir=None):
     p = params
     assert(p.domain_type == 'synthetic')
     assert(p.domain_split_type == 'all_all')
     assert(p.class_split_type == 'all_all')
-    assert(p.domain_classifier_train_embedding_type == 'text')
-    return EmbeddingDomainAndClassDataset(embedding_dict_filename_prefix,p.domain_classifier_train_embedding_type,domain_filter=None,class_filter=None)
+    if p.domain_classifier_train_embedding_type == 'text':
+        return EmbeddingDomainAndClassDataset(embedding_dict_filename_prefix,p.domain_classifier_train_embedding_type,domain_filter=None,class_filter=None)
+    elif p.domain_classifier_train_embedding_type == 'image':
+        return EmbeddingDomainAndClassDataset(embedding_dict_filename_prefix,p.domain_classifier_train_embedding_type,domain_filter=None,class_filter=None,base_dir=image_base_dir,image_shots_per_domainclass=p.domain_classifier_image_shots_per_domainclass,image_sampling_seed=p.domain_classifier_image_sampling_seed)
+    else:
+        assert(False)
 
 def get_train_dataloader(params, train_dataset):
     p = params
@@ -158,22 +163,28 @@ def do_training(params, train_dataset, experiment_dir):
 
     save_checkpoint(model, optimizer, scheduler, epoch, checkpoint_prefix, is_final=True)
 
-def train_domain_classifier(params_key, embedding_dict_filename_prefix, experiment_dir):
-    embedding_dict_filename_prefix = os.path.expanduser(embedding_dict_filename_prefix)
-    experiment_dir = os.path.expanduser(experiment_dir)
+def train_domain_classifier(params_key, embedding_dict_filename_prefix, experiment_dir, image_base_dir=None):
+    embedding_dict_filename_prefix = os.path.abspath(os.path.expanduser(embedding_dict_filename_prefix))
+    experiment_dir = os.path.abspath(os.path.expanduser(experiment_dir))
+    if image_base_dir is not None:
+        image_base_dir = os.path.abspath(os.path.expanduser(image_base_dir))
+
     os.makedirs(experiment_dir, exist_ok=True)
 
     validate_params_key(experiment_dir, params_key)
     p = grab_params(params_key)
+    assert(p.sampling_method == 'classifier')
 
-    train_dataset = get_train_dataset(p, embedding_dict_filename_prefix)
+    write_to_log_file('getting train dataset...')
+    train_dataset = get_train_dataset(p, embedding_dict_filename_prefix, image_base_dir=image_base_dir)
+    write_to_log_file('done getting train dataset')
     with open(os.path.join(experiment_dir, 'train_domain_filter.pkl'), 'wb') as f:
         pickle.dump(train_dataset.domain_filter, f)
 
     do_training(p, train_dataset, experiment_dir)
 
 def usage():
-    print('Usage: python train_domain_classifier.py <params_key> <embedding_dict_filename_prefix> <experiment_dir>')
+    print('Usage: python train_domain_classifier.py <params_key> <embedding_dict_filename_prefix> <experiment_dir> [<image_base_dir>=None]')
 
 if __name__ == '__main__':
     train_domain_classifier(*(sys.argv[1:]))

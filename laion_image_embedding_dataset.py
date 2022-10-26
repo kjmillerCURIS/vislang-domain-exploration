@@ -3,8 +3,12 @@ import sys
 import glob
 import numpy as np
 import pickle
+import random
 import torch
 from tqdm import tqdm
+
+#shuffling option in case we only have time to process a subset of the data, at least it'll be a roughly uniform subset
+SHUFFLE_IMAGE_LEVEL_INFO_DICTS = True
 
 class LaionImageEmbeddingDataset(torch.utils.data.Dataset):
 
@@ -15,7 +19,10 @@ class LaionImageEmbeddingDataset(torch.utils.data.Dataset):
         self.image_base_list = []
         print('loading a biiiiiig pickle (well, actually, lots of moderate pickles)...')
         dict_filenames = sorted(glob.glob(os.path.join(laion_base_dir, 'image_level_info_dict-*.pkl')))
-        for dict_filename in sorted(dict_filenames):
+        if SHUFFLE_IMAGE_LEVEL_INFO_DICTS:
+            random.shuffle(dict_filenames)
+
+        for dict_filename in dict_filenames:
             with open(dict_filename, 'rb') as f:
                 image_level_info_dict = pickle.load(f)
 

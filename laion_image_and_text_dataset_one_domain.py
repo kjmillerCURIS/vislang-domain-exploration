@@ -10,6 +10,7 @@ import clip
 from download_images_from_laion import get_domain_dir
 from experiment_params.param_utils import get_params_key
 from experiment_params.balance_params import grab_params
+from compute_CLIP_embeddings import write_to_log_file
 
 class LaionImageAndTextDatasetOneDomain(torch.utils.data.Dataset):
 
@@ -26,13 +27,16 @@ class LaionImageAndTextDatasetOneDomain(torch.utils.data.Dataset):
     def __load_image_filename_list_and_text_str_list(self):
         self.image_filename_list = []
         self.text_str_list = []
+        write_to_log_file('loading image_bases.pkl...')
         with open(os.path.join(self.domain_dir, 'image_bases.pkl'), 'rb') as f:
             image_bases = pickle.load(f)
 
+        write_to_log_file('loading image_base_to_caption.pkl...')
         with open(os.path.join(self.domain_dir, 'image_base_to_caption.pkl'), 'rb') as f:
             image_base_to_caption = pickle.load(f)
 
-        for t, image_base in enumerate(image_bases):
+        write_to_log_file('going through image_bases...')
+        for t, image_base in tqdm(enumerate(image_bases)):
             image_filename = self.__get_image_filename(t)
             if not os.path.exists(image_filename):
                 continue
@@ -41,6 +45,7 @@ class LaionImageAndTextDatasetOneDomain(torch.utils.data.Dataset):
             self.text_str_list.append(image_base_to_caption[image_base])
 
     ''' Use this to fine-tune CLIP on image-text pairs of a subset of laion (just one "domain") '''
+    ''' if domain_index==-1 then we'll look for a folder "laion_sample/uniform_subset" instead of the domain dir '''
     def __init__(self, experiment_dir, domain_index):
         self.domain_dir = get_domain_dir(experiment_dir, domain_index)
         params_key = get_params_key(experiment_dir)

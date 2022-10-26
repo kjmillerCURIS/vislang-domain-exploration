@@ -10,14 +10,19 @@ from laion_image_embedding_dataset import LaionImageEmbeddingDataset
 from train_domain_classifier import load_model_and_domain_names
 from compute_CLIP_embeddings import write_to_log_file
 from sample_from_laion import load_log_probs_dict #yes, I know that sample_from_laion.py gets run *after* compute_log_probs_on_laion.py, but...
+from experiment_params.balance_params import grab_params
+from experiment_params.param_utils import get_params_key
 
 EMBEDDING_SIZE = 768
 BATCH_SIZE = 16384
 SHARD_SIZE = 5000000
 
 def compute_domain_log_probs_on_laion(experiment_dir, laion_base_dir):
-    experiment_dir = os.path.expanduser(experiment_dir)
-    laion_base_dir = os.path.expanduser(laion_base_dir)
+    experiment_dir = os.path.abspath(os.path.expanduser(experiment_dir))
+    laion_base_dir = os.path.abspath(os.path.expanduser(laion_base_dir))
+
+    p = grab_params(get_params_key(experiment_dir))
+    assert(p.domain_classifier_inference_modality == 'image')
 
     log_probs_dict, max_shard_index = load_log_probs_dict(experiment_dir)
     write_to_log_file('max_shard_index = %d'%(max_shard_index))

@@ -35,7 +35,8 @@ def get_checkpoint_epoch_step(checkpoint_filename):
 #(Note: model will be dictionary mapping from 'image' or 'text' to the respective backbones)
 #(Note: this is the part where we decide if we will use nn.DataParallel)
 #(Note: only need one optimizer, even though it has different hyperparams for different sets of params)
-def get_model_optimizer_scheduler(params, checkpoint_prefix, epoch_length):
+#(Note: even in cases where there's a disentanglement part, this will return the same structures as if this was a normal checkpoint. But in those cases you have to set checkpoint_also_includes_disentanglement=True so it knows that the checkpoint will be in a different format.)
+def get_model_optimizer_scheduler(params,checkpoint_prefix,epoch_length,also_return_checkpoint=False,checkpoint_also_includes_disentanglement=False):
     p = params
     assert(not os.path.exists(checkpoint_prefix + '-FINAL.pth'))
 
@@ -70,19 +71,33 @@ def get_model_optimizer_scheduler(params, checkpoint_prefix, epoch_length):
     checkpoint_filenames = sorted(glob.glob(checkpoint_prefix + '-*-*.pth'))
     checkpoint_epoch_step_list = [get_checkpoint_epoch_step(checkpoint_filename) for checkpoint_filename in checkpoint_filenames]
     if len(checkpoint_epoch_step_list) == 0:
-        return model, temperature, optimizer, scheduler, 0, 0, False
+        if also_return_checkpoint:
+            return model, temperature, optimizer, scheduler, 0, 0, False, None
+        else:
+            return model, temperature, optimizer, scheduler, 0, 0, False
     else:
         epoch_step_filename_list = [(epoch, step, filename) for (epoch, step), filename in zip(checkpoint_epoch_step_list, checkpoint_filenames)]
         _, __, best_filename = sorted(epoch_step_filename_list, reverse=True)[0]
         checkpoint = torch.load(best_filename)
         for backbone_type in ['image', 'text']:
-            model[backbone_type].load_state_dict(checkpoint['model_state_dict'][backbone_type])
+            if checkpoint_also_includes_disentanglement:
+                model[backbone_type].load_state_dict(checkpoint['model_state_dict']['main'][backbone_type])
+            else:
+                model[backbone_type].load_state_dict(checkpoint['model_state_dict'][backbone_type])
 
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        if checkpoint_also_includes_disentanglement:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict']['main'])
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict']['main'])
+        else:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
         epoch = checkpoint['epoch']
         step_within_epoch = checkpoint['step_within_epoch']
-        return model, temperature, optimizer, scheduler, epoch, step_within_epoch, True
+        if also_return_checkpoint:
+            return model, temperature, optimizer, scheduler, epoch, step_within_epoch, True, checkpoint
+        else:
+            return model, temperature, optimizer, scheduler, epoch, step_within_epoch, True
 
 def save_checkpoint(model, optimizer, scheduler, epoch, step_within_epoch, checkpoint_prefix, telemetry, telemetry_filename, is_final=False):
     checkpoint = {'model_state_dict' : {'image' : model['image'].state_dict(), 'text' : model['text'].state_dict()}, 'optimizer_state_dict' : optimizer.state_dict(), 'scheduler_state_dict' : scheduler.state_dict(), 'epoch' : epoch, 'step_within_epoch' : step_within_epoch}
@@ -124,6 +139,9 @@ def finetune_clip_on_domain_pure_batches(experiment_dir, num_workers=0):
     p = grab_params(params_key)
     with open(os.path.join(experiment_dir, 'train_domain_filter.pkl'), 'rb') as f:
         domain_names = pickle.load(f)
+
+    assert(p.clip_finetuning_batch_type == 'domain_pure')
+    assert(not p.clip_finetuning_do_disentanglement)
 
     #checkpoint_prefix
     checkpoint_prefix = os.path.join(experiment_dir, 'clip_finetuning_checkpoints', 'clip_finetuning_checkpoint')

@@ -1,6 +1,7 @@
 import os
 import sys
 import clip
+import glob
 import pickle
 import torch
 from tqdm import tqdm
@@ -26,14 +27,21 @@ def get_preprocess(clip_model_type):
 
 def inference_clip_checkpoints(experiment_dir, checkpoint_suffixes, val_base_dir):
     experiment_dir = os.path.abspath(os.path.expanduser(experiment_dir))
-    checkpoint_suffixes = checkpoint_suffixes.split(',')
+    if checkpoint_suffixes == 'ALL':
+        checkpoint_suffixes = sorted(glob.glob(os.path.join(experiment_dir, 'clip_finetuning_checkpoints', 'clip_finetuning_checkpoint-*.pth')))
+        checkpoint_suffixes = ['-'.join(os.path.splitext(os.path.basename(s))[0].split('-')[1:]) for s in checkpoint_suffixes]
+    else:
+        checkpoint_suffixes = checkpoint_suffixes.split(',')
+
     val_base_dir = os.path.abspath(os.path.expanduser(val_base_dir))
+
+    p = grab_params(get_params_key(experiment_dir))
 
     #stuff
     set_cv_threads()
 
     #image preprocessing stuff
-    clip_model_type = grab_params(get_params_key(experiment_dir)).clip_model_type
+    clip_model_type = p.clip_model_type
     preprocess = get_preprocess(clip_model_type)
 
     #val data setup stuff
@@ -59,8 +67,13 @@ def inference_clip_checkpoints(experiment_dir, checkpoint_suffixes, val_base_dir
         image_backbone, text_backbone, _ = grab_clip_backbones(clip_model_type)
         checkpoint_filename = os.path.join(experiment_dir, 'clip_finetuning_checkpoints', 'clip_finetuning_checkpoint-' + checkpoint_suffix + '.pth')
         checkpoint = torch.load(checkpoint_filename)
-        image_backbone.load_state_dict(checkpoint['model_state_dict']['image'])
-        text_backbone.load_state_dict(checkpoint['model_state_dict']['text'])
+        if p.clip_finetuning_do_disentanglement:
+            image_backbone.load_state_dict(checkpoint['model_state_dict']['main']['image'])
+            text_backbone.load_state_dict(checkpoint['model_state_dict']['main']['text'])
+        else:
+            image_backbone.load_state_dict(checkpoint['model_state_dict']['image'])
+            text_backbone.load_state_dict(checkpoint['model_state_dict']['text'])
+
         image_backbone.eval()
         text_backbone.eval()
         image_models.append(image_backbone)

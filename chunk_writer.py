@@ -109,3 +109,6 @@ class ChunkWriter:
                 d[k] = v
 
         return d
+
+    def get_keys(self):
+        return sorted(self.chunk_index_map.keys())

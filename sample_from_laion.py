@@ -72,11 +72,15 @@ def populate_url_caption_dicts(samples, laion_base_dir):
     write_to_log_file('done populating url-caption dicts')
     return url_caption_dicts
 
-def save_samples(url_caption_dicts, domain_names, experiment_dir):
+def save_samples(url_caption_dicts, domain_names, experiment_dir, include_domain_index=True):
     sample_base_dir = os.path.join(experiment_dir, 'laion_sample')
     os.makedirs(sample_base_dir, exist_ok=True)
     for i, (url_caption_dict, domain_name) in tqdm(enumerate(zip(url_caption_dicts, domain_names))):
-        sample_dir = os.path.join(sample_base_dir, '%03d-%s'%(i, domain_name))
+        if include_domain_index:
+            sample_dir = os.path.join(sample_base_dir, '%03d-%s'%(i, domain_name))
+        else:
+            sample_dir = os.path.join(sample_base_dir, domain_name)
+
         os.makedirs(sample_dir, exist_ok=True)
         write_to_log_file('saving for domian %d...'%(i))
         image_bases = sorted(url_caption_dict.keys())
@@ -87,7 +91,7 @@ def save_samples(url_caption_dicts, domain_names, experiment_dir):
             pickle.dump(image_bases, f)
 
         with open(os.path.join(sample_dir, 'image_urls.txt'), 'w') as f:
-            f.write('\n'.join([url_caption_dict[image_base][0] for image_base in image_bases]))
+            f.write('\n'.join([url_caption_dict[image_base][0].strip() for image_base in image_bases]))
 
         write_to_log_file('done saving for domain %d'%(i))
 
@@ -116,6 +120,7 @@ def sample_from_laion(experiment_dir, laion_base_dir):
 
     params_key = get_params_key(experiment_dir)
     p = grab_params(params_key)
+    assert(p.sampling_method == 'classifier')
 
     with open(os.path.join(experiment_dir, 'train_domain_filter.pkl'), 'rb') as f:
         domain_names = pickle.load(f)

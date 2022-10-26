@@ -63,7 +63,7 @@ def compute_domain_classifier_accuracy_on_images(experiment_dir, image_embedding
 
     model, domain_names = load_model_and_domain_names(experiment_dir, EMBEDDING_SIZE, device='cuda')
     model.eval()
-    test_dataset = EmbeddingDomainAndClassDataset(image_embedding_dict_filename_prefix, 'image', domain_filter=domain_names, base_dir=image_base_dir)
+    test_dataset = EmbeddingDomainAndClassDataset(image_embedding_dict_filename_prefix, 'image', domain_filter=domain_names, base_dir=image_base_dir, image_shots_per_domainclass=None)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=VAL_BATCH_SIZE, shuffle=False, drop_last=False, num_workers=0)
     all_preds = []
     all_gts = []
