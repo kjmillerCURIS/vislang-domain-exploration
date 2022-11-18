@@ -32,6 +32,7 @@ def make_plots(results_list, color_list, marker_list, linestyle_list, label_list
     os.makedirs(os.path.dirname(plot_prefix), exist_ok=True)
     for standard_or_own_domain in ['standard', 'own_domain']:
         plt.clf()
+        plt.figure(figsize=[14.4, 4.8])
         best_x = None
         best_y = float('-inf')
         baseline_y = None
@@ -48,8 +49,11 @@ def make_plots(results_list, color_list, marker_list, linestyle_list, label_list
         plt.plot(plt.xlim(), [baseline_y, baseline_y], linestyle='dashed', color='0.5')
         plt.scatter([best_x], [best_y], s=320, marker='*', color='gold')
         plt.text(best_x, best_y, '%.1f%%'%(best_y))
-#        plt.legend(framealpha=1,bbox_to_anchor =(0,0.5), loc='center left')
-        plt.title(standard_or_own_domain + ' prompt')
+        ax = plt.gca()
+        box = ax.get_position()
+        ax.set_position([box.x0, box.y0, 0.7 * box.width, box.height])
+        plt.legend(framealpha=1, bbox_to_anchor=(1,0.5), loc='center left')
+        plt.title('(' + standard_or_own_domain + ' prompt)')
         plt.xlabel('epochs')
         plt.ylabel('zero-shot accuracy (%)')
         plt.savefig(plot_prefix + '-' + standard_or_own_domain + '-zoomout.png')
