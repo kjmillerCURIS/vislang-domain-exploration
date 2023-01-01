@@ -25,6 +25,8 @@ Unfortunately I am unable to recreate the conda environment from a requirements.
 
 `conda install -c conda-forge pytorch-lightning lightning-bolts`
 
+`pip install Wand`
+
 Then, go to this line in the img2dataset code on your system (https://github.com/rom1504/img2dataset/blob/c0f14c9020003483f9b30b960317187f9a6c6b97/img2dataset/reader.py#L72) and change it to use '\t' as the delimiter (instead of the default ','). You'll also probably want to disable saving a .json file alongside every single image file - to do this, comment out this line and the one before it (https://github.com/rom1504/img2dataset/blob/c6df1996e576e3db8bc16b84e4bd9b644cc35de9/img2dataset/writer.py#L273).
 
 [TODO: UPDATE requirement FILES!!!]

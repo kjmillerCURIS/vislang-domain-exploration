@@ -21,3 +21,10 @@ def get_params_key(experiment_dir):
         params_key = pickle.load(f)
 
     return params_key
+
+def get_train_type(experiment_dir):
+    train_type_filename = os.path.join(experiment_dir, 'train_type.pkl')
+    with open(train_type_filename, 'rb') as f:
+        train_type = pickle.load(f)
+
+    return train_type

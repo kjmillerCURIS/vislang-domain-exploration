@@ -44,7 +44,27 @@ def grab_clip_backbones(clip_model_type):
 
 #a generator
 #will yield input_minibatch, start_index, end_index
-def input_minibatcher(input_batch, minibatch_size):
+#if input_batch is a tuple, then input_minibatch will also be a tuple
+#we will NOT allow multiple nestings of tuples!
+#CAUTION: if it's a tuple and they're different lengths, then behavior is undefined!
+def input_minibatcher(input_batch, minibatch_size, prohibit_tuples=False):
+    if isinstance(input_batch, tuple):
+        assert(not prohibit_tuples)
+        genny_list = [input_minibatcher(x, minibatch_size, prohibit_tuples=True) for x in input_batch]
+        for outputs in zip(*genny_list):
+            start_index = None
+            end_index = None
+            minibatches = []
+            for output in outputs:
+                assert(len(output) == 3)
+                assert(start_index is None or start_index == output[1])
+                assert(end_index is None or end_index == output[2])
+                start_index = output[1]
+                end_index = output[2]
+                minibatches.append(output[0])
+
+            yield tuple(minibatches, start_index, end_index)
+
     N = input_batch.size(dim=0)
     chunk_start = 0
     while chunk_start < N:
@@ -121,6 +141,7 @@ def accumulate_into_backbone(backbone, input_batch, minibatch_size, top_grad, lo
 #ditto for text_backbone
 #image_batch should be a batch of images, already on GPU or CPU or wherever you want it (it does NOT have to be on multiple devices if doing DataParallel)
 #ditto for text_batch
+#in the case of adapters, image_batch will actually be a pair of batches, and ditto for text_batch
 #image_minibatch_size should be whatever size you think can be processed at once. It can probably be bigger if using multi-GPUs
 #ditto for text_minibatch_size
 #temperature is the thingy we divide the cossims by before plugging them into softmax
