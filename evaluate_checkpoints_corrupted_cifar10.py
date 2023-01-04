@@ -32,7 +32,7 @@ TEXT_INTER_SIZE = 512
 #if you set swap_class_and_domain=True, then the role of class and domain will be switched, and so will naming convention of keys
 def make_classifiers(text_input_dataset, text_model, params, swap_class_and_domain=False, text_input_dataset_domainless=None):
     p = params
-    assert((text_input_dataset_domainless is None and p.domainless_text_prop == 0.0) or (text_input_dataset_domainless is not None and p.domainless_text_prop > 0.0))
+    assert((text_input_dataset_domainless is None and (p.domainless_text_prop == 0.0 or swap_class_and_domain)) or (text_input_dataset_domainless is not None and p.domainless_text_prop > 0.0 and not swap_class_and_domain))
     targets = sorted(CLASS_NAMES.keys())
     non_targets = sorted(generate_aug_dict().keys())
     key_labels = 'classes'
@@ -62,8 +62,6 @@ def make_classifiers(text_input_dataset, text_model, params, swap_class_and_doma
         classifiers[key_ensemble_domainless] = np.zeros((EMBEDDING_SIZE, len(targets)), dtype=np.float32)
         classifiers[key_oracle_domainless] = {non_target : np.zeros((EMBEDDING_SIZE, len(targets)), dtype=np.float32) for non_target in non_targets}
         sums[key_domainless] = np.zeros((1, len(targets)), dtype=np.float32)
-        sums[key_ensemble_domainless] = np.zeros((1, len(targets)), dtype=np.float32)
-        sums[key_oracle_domainless] = {non_target : np.zeros((1, len(targets)), dtype=np.float32) for non_target in non_targets}
 
     #populate (not domainless)
     dataloader = torch.utils.data.DataLoader(text_input_dataset, batch_size=BATCH_SIZE, shuffle=False, drop_last=False, num_workers=NUM_WORKERS)
@@ -98,11 +96,12 @@ def make_classifiers(text_input_dataset, text_model, params, swap_class_and_doma
         for non_target in non_targets:
             classifiers[key_oracle][non_target] = torch.tensor(classifiers[key_oracle][non_target] / sums[key_oracle][non_target], dtype=torch.float32).to('cuda')
 
-    #populate, check, and divide domainless classifier
     if use_domainless:
+        #populate, check, and divide domainless classifier
         dataloader = torch.utils.data.DataLoader(text_input_dataset_domainless, batch_size=BATCH_SIZE, shuffle=False, drop_last=False, num_workers=NUM_WORKERS)
         for batch in tqdm(dataloader):
-            batch_targets = text_input_dataset.get_classes(batch['idx'])
+            batch_targets = text_input_dataset_domainless.get_classes(batch['idx'])
+            print(batch_targets)
             Xa = batch['text_input'].to('cuda')
             Xb = batch['text_embedding'].to('cuda')
             with torch.no_grad():
@@ -117,17 +116,25 @@ def make_classifiers(text_input_dataset, text_model, params, swap_class_and_doma
 
         assert(np.all(sums[key_domainless] == 1))
         with torch.no_grad():
-            classifiers[key_domainless] = torch.tensor(classifiers[key_domainless] / sums[key_domainless], dtype=toch.float32).to('cuda')
+            classifiers[key_domainless] = torch.tensor(classifiers[key_domainless] / sums[key_domainless], dtype=torch.float32).to('cuda')
 
-        df
+        #blend with other classifiers
+        with torch.no_grad():
+            classifiers[key_ensemble_domainless] = p.domainless_text_prop * classifiers[key_domainless] + (1 - p.domainless_text_prop) * classifiers[key_ensemble]
+            for non_target in non_targets:
+                classifiers[key_oracle_domainless][non_target] = p.domainless_text_prop * classifiers[key_domainless] + (1 - p.domainless_text_prop) * classifiers[key_oracle][non_target]
 
-    assert(False) KEVIN
-
-
+    #normalize everything
     with torch.no_grad():
         classifiers[key_ensemble] = classifiers[key_ensemble] / classifiers[key_ensemble].norm(dim=0, keepdim=True)
         for non_target in non_targets:
             classifiers[key_oracle][non_target] = classifiers[key_oracle][non_target] / classifiers[key_oracle][non_target].norm(dim=0, keepdim=True)
+
+        if use_domainless:
+            classifiers[key_domainless] = classifiers[key_domainless] / classifiers[key_domainless].norm(dim=0, keepdim=True)
+            classifiers[key_ensemble_domainless] = classifiers[key_ensemble_domainless] / classifiers[key_ensemble_domainless].norm(dim=0, keepdim=True)
+            for non_target in non_targets:
+                classifiers[key_oracle_domainless][non_target] = classifiers[key_oracle_domainless][non_target] / classifiers[key_oracle_domainless][non_target].norm(dim=0, keepdim=True)
 
     return classifiers
 
@@ -137,7 +144,9 @@ def make_classifiers(text_input_dataset, text_model, params, swap_class_and_doma
 #image_input_one_domain_datasets should be a dict mapping each domain to a dataset the only gives image inputs from that domain
 #assume that image_model and text_model are already on GPU
 #if you set swap_class_and_domain=True, then the role of class and domain will be switched, and so will naming convention of keys
-def run_preds(image_input_one_non_target_datasets, text_input_dataset, image_model, text_model, swap_class_and_domain=False):
+def run_preds(image_input_one_non_target_datasets, text_input_dataset, image_model, text_model, params, swap_class_and_domain=False, text_input_dataset_domainless=None):
+    p = params
+    assert((text_input_dataset_domainless is None and (p.domainless_text_prop == 0.0 or swap_class_and_domain)) or (text_input_dataset_domainless is not None and p.domainless_text_prop > 0.0 and not swap_class_and_domain))
     targets = sorted(CLASS_NAMES.keys())
     non_targets = sorted(generate_aug_dict().keys())
     key_labels = 'classes'
@@ -149,9 +158,20 @@ def run_preds(image_input_one_non_target_datasets, text_input_dataset, image_mod
         key_ensemble = 'avg_classes'
         key_oracle = 'own_class'
 
-    classifiers = make_classifiers(text_input_dataset, text_model, swap_class_and_domain=swap_class_and_domain)
+    use_domainless = (not swap_class_and_domain) and (p.domainless_text_prop > 0.0)
+    if use_domainless:
+        key_domainless = 'domainless'
+        key_ensemble_domainless = 'avg_domains_plus_domainless'
+        key_oracle_domainless = 'own_domain_plus_domainless'
+
+    classifiers = make_classifiers(text_input_dataset, text_model, p, swap_class_and_domain=swap_class_and_domain, text_input_dataset_domainless=text_input_dataset_domainless)
     write_to_log_file('made classifiers')
     pred_dict = {key_ensemble : {}, key_oracle : {non_target : {} for non_target in non_targets}}
+    if use_domainless:
+        pred_dict[key_domainless] = {}
+        pred_dict[key_ensemble_domainless] = {}
+        pred_dict[key_oracle_domainless] = {non_target : {} for non_target in non_targets}
+
     for non_target in tqdm(non_targets):
         dataset = image_input_one_non_target_datasets[non_target]
         dataloader = torch.utils.data.DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False, drop_last=False, num_workers=NUM_WORKERS)
@@ -166,10 +186,23 @@ def run_preds(image_input_one_non_target_datasets, text_input_dataset, image_mod
                 preds_ensemble = [classifiers[key_labels][y] for y in preds_ensemble.cpu().numpy()]
                 preds_oracle = torch.argmax(embeddings @ classifiers[key_oracle][non_target], dim=1, keepdim=False)
                 preds_oracle = [classifiers[key_labels][y] for y in preds_oracle.cpu().numpy()]
+                if use_domainless:
+                    preds_domainless = torch.argmax(embeddings @ classifiers[key_domainless], dim=1, keepdim=False)
+                    preds_domainless = [classifiers[key_labels][y] for y in preds_domainless.cpu().numpy()]
+                    preds_ensemble_domainless = torch.argmax(embeddings @ classifiers[key_ensemble_domainless], dim=1, keepdim=False)
+                    preds_ensemble_domainless = [classifiers[key_labels][y] for y in preds_ensemble_domainless.cpu().numpy()]
+                    preds_oracle_domainless = torch.argmax(embeddings @ classifiers[key_oracle_domainless][non_target], dim=1, keepdim=False)
+                    preds_oracle_domainless = [classifiers[key_labels][y] for y in preds_oracle_domainless.cpu().numpy()]
 
             for image_base, pred_ensemble, pred_oracle in zip(image_bases, preds_ensemble, preds_oracle):
                 pred_dict[key_ensemble][image_base] = pred_ensemble
                 pred_dict[key_oracle][non_target][image_base] = pred_oracle
+
+            if use_domainless:
+                for image_base, pred_domainless, pred_ensemble_domainless, pred_oracle_domainless in zip(image_bases, preds_domainless, preds_ensemble_domainless, preds_oracle_domainless):
+                    pred_dict[key_domainless][image_base] = pred_domainless
+                    pred_dict[key_ensemble_domainless][image_base] = pred_ensemble_domainless
+                    pred_dict[key_oracle_domainless][non_target][image_base] = pred_oracle_domainless
 
     return pred_dict
 
@@ -260,19 +293,39 @@ def compute_accuracy(pred_dict, gt_class_domain_dict, reweighting_class_domain_d
         key_ensemble = 'avg_classes'
         key_oracle = 'own_class'
 
+    use_domainless = ('domainless' in pred_dict) #this is maybe a little bit risky...
+    if use_domainless:
+        key_domainless = 'domainless'
+        key_ensemble_domainless = 'avg_domains_plus_domainless'
+        key_oracle_domainless = 'own_domain_plus_domainless'
+
     acc_dict = {'biased_acc_as_percentage' : {key_oracle : {}}, 'unbiased_acc_as_percentage' : {key_oracle : {}}}
+    if use_domainless:
+        acc_dict['biased_acc_as_percentage'][key_oracle_domainless] = {}
+        acc_dict['unbiased_acc_as_percentage'][key_oracle_domainless] = {}
+
     acc_dict['biased_acc_as_percentage'][key_ensemble] = compute_accuracy_helper(pred_dict[key_ensemble], gt_class_domain_dict, reweighting_class_domain_dict=reweighting_class_domain_dict, expected_non_target=None, swap_class_and_domain=swap_class_and_domain)
     acc_dict['unbiased_acc_as_percentage'][key_ensemble] = compute_accuracy_helper(pred_dict[key_ensemble], gt_class_domain_dict, reweighting_class_domain_dict=None, expected_non_target=None, swap_class_and_domain=swap_class_and_domain)
+    if use_domainless:
+        acc_dict['biased_acc_as_percentage'][key_domainless] = compute_accuracy_helper(pred_dict[key_domainless], gt_class_domain_dict, reweighting_class_domain_dict=reweighting_class_domain_dict, expected_non_target=None, swap_class_and_domain=swap_class_and_domain)
+        acc_dict['unbiased_acc_as_percentage'][key_domainless] = compute_accuracy_helper(pred_dict[key_domainless], gt_class_domain_dict, reweighting_class_domain_dict=None, expected_non_target=None, swap_class_and_domain=swap_class_and_domain)
+        acc_dict['biased_acc_as_percentage'][key_ensemble_domainless] = compute_accuracy_helper(pred_dict[key_ensemble_domainless], gt_class_domain_dict, reweighting_class_domain_dict=reweighting_class_domain_dict, expected_non_target=None, swap_class_and_domain=swap_class_and_domain)
+        acc_dict['unbiased_acc_as_percentage'][key_ensemble_domainless] = compute_accuracy_helper(pred_dict[key_ensemble_domainless], gt_class_domain_dict, reweighting_class_domain_dict=None, expected_non_target=None, swap_class_and_domain=swap_class_and_domain)
+
     for non_target in sorted(pred_dict[key_oracle].keys()):
         acc_dict['biased_acc_as_percentage'][key_oracle][non_target] = compute_accuracy_helper(pred_dict[key_oracle][non_target], gt_class_domain_dict, reweighting_class_domain_dict=reweighting_class_domain_dict, expected_non_target=non_target, swap_class_and_domain=swap_class_and_domain)
         acc_dict['unbiased_acc_as_percentage'][key_oracle][non_target] = compute_accuracy_helper(pred_dict[key_oracle][non_target], gt_class_domain_dict, reweighting_class_domain_dict=None, expected_non_target=non_target, swap_class_and_domain=swap_class_and_domain)
+        if use_domainless:
+            acc_dict['biased_acc_as_percentage'][key_oracle_domainless][non_target] = compute_accuracy_helper(pred_dict[key_oracle_domainless][non_target], gt_class_domain_dict, reweighting_class_domain_dict=reweighting_class_domain_dict, expected_non_target=non_target, swap_class_and_domain=swap_class_and_domain)
+            acc_dict['unbiased_acc_as_percentage'][key_oracle_domainless][non_target] = compute_accuracy_helper(pred_dict[key_oracle_domainless][non_target], gt_class_domain_dict, reweighting_class_domain_dict=None, expected_non_target=non_target, swap_class_and_domain=swap_class_and_domain)
 
     return acc_dict
 
 #returns result which is dict and has keys 'pred_dict' and 'acc_dict'
 #if you set swap_class_and_domain=True, then the role of class and domain will be switched, and so will naming convention of keys
-def evaluate_one_checkpoint(image_input_one_non_target_datasets, text_input_dataset, image_model, text_model, gt_class_domain_dict, reweighting_class_domain_dict, swap_class_and_domain=False):
-    pred_dict = run_preds(image_input_one_non_target_datasets, text_input_dataset, image_model, text_model, swap_class_and_domain=swap_class_and_domain)
+def evaluate_one_checkpoint(image_input_one_non_target_datasets, text_input_dataset, image_model, text_model, params, gt_class_domain_dict, reweighting_class_domain_dict, swap_class_and_domain=False, text_input_dataset_domainless=None):
+    p = params
+    pred_dict = run_preds(image_input_one_non_target_datasets, text_input_dataset, image_model, text_model, p, swap_class_and_domain=swap_class_and_domain, text_input_dataset_domainless=text_input_dataset_domainless)
     write_to_log_file('ran preds')
     acc_dict = compute_accuracy(pred_dict, gt_class_domain_dict, reweighting_class_domain_dict, swap_class_and_domain=swap_class_and_domain)
     write_to_log_file('computed accuracies')
@@ -333,7 +386,12 @@ def evaluate_checkpoints_corrupted_cifar10(experiment_dir, image_adapter_input_d
 
     write_to_log_file('loaded image datasets')
 
-    text_input_dataset = CorruptedCIFAR10TextInputDataset(p, text_adapter_input_dict_filename)
+    text_input_dataset = CorruptedCIFAR10TextInputDataset(p, text_adapter_input_dict_filename, domainful=True)
+    text_input_dataset_domainless = None
+    use_domainless = (not swap_class_and_domain) and (p.domainless_text_prop > 0.0)
+    if use_domainless:
+        text_input_dataset_domainless = CorruptedCIFAR10TextInputDataset(p, text_adapter_input_dict_filename, domainful=False)
+
     write_to_log_file('loaded text dataset')
     with open(gt_class_domain_dict_filename, 'rb') as f:
         gt_class_domain_dict = pickle.load(f)
@@ -345,7 +403,7 @@ def evaluate_checkpoints_corrupted_cifar10(experiment_dir, image_adapter_input_d
     for checkpoint_filename in tqdm(checkpoint_filenames):
         image_model, text_model, kv = load_model(p, checkpoint_filename)
         write_to_log_file('loaded model')
-        result = evaluate_one_checkpoint(image_input_one_non_target_datasets, text_input_dataset, image_model, text_model, gt_class_domain_dict, reweighting_class_domain_dict, swap_class_and_domain=swap_class_and_domain)
+        result = evaluate_one_checkpoint(image_input_one_non_target_datasets, text_input_dataset, image_model, text_model, p, gt_class_domain_dict, reweighting_class_domain_dict, swap_class_and_domain=swap_class_and_domain, text_input_dataset_domainless=text_input_dataset_domainless)
         write_to_log_file('evaluated')
         for k in sorted(kv.keys()):
             result[k] = kv[k]
@@ -357,7 +415,9 @@ def evaluate_checkpoints_corrupted_cifar10(experiment_dir, image_adapter_input_d
         print('biased_own = %.1f%%'%(np.mean([result['acc_dict']['biased_acc_as_percentage'][key_oracle][non_target] for non_target in non_targets])))
         print('unbiased_avg = %.1f%%'%(result['acc_dict']['unbiased_acc_as_percentage'][key_ensemble]))
         print('unbiased_own = %.1f%%'%(np.mean([result['acc_dict']['unbiased_acc_as_percentage'][key_oracle][non_target] for non_target in non_targets])))
+        #TODO: print domainless stuff
         print('')
+
 
         result_filename = os.path.join(result_dir, make_result_basename(checkpoint_filename, swap_class_and_domain=swap_class_and_domain))
         with open(result_filename, 'wb') as f:

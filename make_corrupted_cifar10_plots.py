@@ -45,8 +45,10 @@ def make_corrupted_cifar10_plots(experiment_dirs, plot_filename, swap_class_and_
 
     plt.clf()
     plt.figure(figsize=[14.4, 4.8])
-    should_add_to_legend = True
+    already_in_legend = set([])
     for experiment_dir in experiment_dirs:
+        p = grab_params(get_params_key(experiment_dir))
+        use_domainless = (not swap_class_and_domain) and (p.domainless_text_prop > 0.0)
         epoch_length = get_epoch_length(experiment_dir)
         result_base_dir = 'results'
         if swap_class_and_domain:
@@ -55,36 +57,44 @@ def make_corrupted_cifar10_plots(experiment_dirs, plot_filename, swap_class_and_
         result_filenames = sorted(glob.glob(os.path.join(experiment_dir, result_base_dir, '*.pkl')))
         xs, acc_dicts = get_acc_dicts(result_filenames, epoch_length)
         for bias_type in ['biased', 'unbiased']:
-            for prompt_type in [key_ensemble, key_oracle]:
+            prompt_types = [key_ensemble, key_oracle]
+            if use_domainless:
+                prompt_types.extend(['domainless', 'avg_domains_plus_domainless', 'own_domain_plus_domainless'])
+
+            for prompt_type in prompt_types:
                 color = {'biased' : 'r', 'unbiased' : 'b'}[bias_type]
-                linestyle = {key_ensemble : 'solid', key_oracle : 'dashed'}[prompt_type]
+                if prompt_type == 'domainless':
+                    color = {'r' : 'orange', 'b' : 'g'}[color]
+                elif prompt_type in ['avg_domains_plus_domainless', 'own_domain_plus_domainless']:
+                    color = {'r' : 'pink', 'b' : 'deepskyblue'}[color]
+
+                linestyle = {key_ensemble : 'solid', key_oracle : 'dashed', 'domainless' : 'solid', 'avg_domains_plus_domainless' : 'solid', 'own_domain_plus_domainless' : 'dashed'}[prompt_type]
                 test_set_str = {'biased' : 'biased test set', 'unbiased' : 'unbiased test set'}[bias_type]
-                prompt_str = {key_ensemble : 'ensembled prompt', key_oracle : key_oracle.replace('_', '-') + ' prompt'}[prompt_type]
+                prompt_str = {key_ensemble : 'ensembled prompt', key_oracle : key_oracle.replace('_', '-') + ' prompt', 'domainless' : 'domainless prompt', 'avg_domains_plus_domainless' : 'ensembled+domainless prompt', 'own_domain_plus_domainless' : 'own-domain+domainless prompt'}[prompt_type]
                 legend_str = test_set_str + ', ' + prompt_str
                 ys = []
                 best_x = None
                 best_y = float('-inf')
                 for x, acc_dict in zip(xs, acc_dicts):
                     acc_subdict = acc_dict[bias_type + '_acc_as_percentage']
-                    if prompt_type == key_ensemble:
-                        acc = acc_subdict[key_ensemble]
+                    if prompt_type in [key_ensemble, 'domainless', 'avg_domains_plus_domainless']:
+                        acc = acc_subdict[prompt_type]
                     else:
-                        acc = np.mean([acc_subdict[key_oracle][non_target] for non_target in sorted(acc_subdict[key_oracle].keys())])
+                        acc = np.mean([acc_subdict[prompt_type][non_target] for non_target in sorted(acc_subdict[prompt_type].keys())])
 
                     ys.append(acc)
                     if acc > best_y:
                         best_y = acc
                         best_x = x
 
-                if should_add_to_legend:
+                if (bias_type, prompt_type) not in already_in_legend:
                     plt.plot(xs, ys, color=color, linestyle=linestyle, label=legend_str)
                 else:
                     plt.plot(xs, ys, color=color, linestyle=linestyle)
 
                 plt.scatter([best_x], [best_y], s=320, marker='*', color='gold')
                 plt.text(best_x, best_y, '%.1f%%'%(best_y))
-
-        should_add_to_legend = False
+                already_in_legend.add((bias_type, prompt_type))
 
     ax = plt.gca()
     box = ax.get_position()

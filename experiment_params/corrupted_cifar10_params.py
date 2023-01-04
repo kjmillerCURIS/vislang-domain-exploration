@@ -50,5 +50,11 @@ class CorruptedCIFAR10BaselineParamsLR5BatchSize64DomainlessTextProp75(Corrupted
         super(CorruptedCIFAR10BaselineParamsLR5BatchSize64DomainlessTextProp75, self).__init__()
         self.domainless_text_prop = 0.75
 
+class CorruptedCIFAR10BaselineParamsLR5BatchSize64DomainlessTextProp25(CorruptedCIFAR10BaselineParamsLR5BatchSize64):
+
+    def __init__(self):
+        super(CorruptedCIFAR10BaselineParamsLR5BatchSize64DomainlessTextProp25, self).__init__()
+        self.domainless_text_prop = 0.25
+
 def grab_params(params_key):
     return eval(params_key + '()')

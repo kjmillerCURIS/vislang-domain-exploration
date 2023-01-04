@@ -1,7 +1,7 @@
 #!/bin/bash -l
 
 #$ -P ivc-ml
-#$ -pe omp 2
+#$ -pe omp 3
 #$ -l gpus=1
 #$ -l gpu_c=5.0
 #$ -l h_rt=1:59:59

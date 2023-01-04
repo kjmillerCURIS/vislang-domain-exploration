@@ -71,6 +71,7 @@ class CorruptedCIFAR10TextInputDataset(torch.utils.data.Dataset):
                 self.domain_list.append(domain)
         else:
             for classID in sorted(self.text_adapter_input_dict['domainless'].keys()):
+                print('HEY YO: append ' + str(classID))
                 self.class_list.append(classID)
 
     def __getitem__(self, idx):
@@ -90,6 +91,10 @@ class CorruptedCIFAR10TextInputDataset(torch.utils.data.Dataset):
     #idxs should be a long tensor
     def get_classes(self, idxs):
         idxs = idxs.cpu().numpy()
+        if not self.domainful:
+            print('HEY YO: idxs ' + str(idxs))
+            print('HEY YO: class_list ' + str(self.class_list))
+
         return [self.class_list[idx] for idx in idxs]
 
     #idxs should be a long tensor
