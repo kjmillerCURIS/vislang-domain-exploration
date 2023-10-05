@@ -24,12 +24,14 @@ def compute_PCA(X):
     components = vh
     return {'explained_SDs' : explained_SDs, 'components' : components, 'spread' : np.linalg.norm(explained_SDs)}
 
-
+#NO LONGER USED
 #idea is that we build up some matrix Q such that Q @ [class_comps ; aug_comps; offset] = [vecs ; 0 ; 0]
 #specifically, Q is grabbing a class component and an aug component for each pair and adding them to the offset
 #the last 2 rows of Q force class_comps and aug_comps to be centered
 #(no, this constraint does not degrade the quality of any solution)
 def build_Q(num_classes, num_augs):
+    assert(False) #NO LONGER USED
+
     Q = np.zeros((num_classes * num_augs + 2, num_classes + num_augs + 1))
     
     #centering constraints
@@ -46,6 +48,35 @@ def build_Q(num_classes, num_augs):
 
     return Q
 
+#pairs should be a list of (classID, augID) pairs
+#classID and augID don't necessarily have to be indices. We'll sort the present classes and augs and use those as the indices
+#see build_Q() for more details on what this function does
+#build_Q_for_pairs() is specifically for cases where pairs might not be a cartesian product
+def build_Q_for_pairs(pairs):
+    classIDs = sorted(set([p[0] for p in pairs]))
+    augIDs = sorted(set([p[1] for p in pairs]))
+    num_classes = len(classIDs)
+    num_augs = len(augIDs)
+    Q_rows = []
+    for p in pairs:
+        Q_row = np.zeros(num_classes + num_augs + 1)
+        Q_row[-1] = 1.0 #this adds in the offset
+        Q_row[classIDs.index(p[0])] = 1.0 #this adds in the class component
+        Q_row[num_classes + augIDs.index(p[1])] = 1.0 #this adds in the domain component
+        Q_rows.append(Q_row)
+
+    #center classes
+    Q_row = np.zeros(num_classes + num_augs + 1)
+    Q_row[:num_classes] = 1.0
+    Q_rows.append(Q_row)
+
+    #center augs
+    Q_row = np.zeros(num_classes + num_augs + 1)
+    Q_row[num_classes:-1] = 1.0
+    Q_rows.append(Q_row)
+
+    return np.array(Q_rows)
+
 #takes in:
 #-classIDs as list
 #-augIDs as list
@@ -56,7 +87,7 @@ def build_Q(num_classes, num_augs):
 #-aug_comps ==> dictionary mapping augID to component
 #-offset ==> vector which simplifies things by allowing class_comps and aug_comps to be centered
 #second dictionary is output of calling compute_PCA() on the residuals
-def do_direction_decomposition(classIDs, augIDs, pair2vec):
+def do_direction_decomposition(pair2vec):
     #(Note: After implementing this, I figured out that this is just the same as averaging out domain/class.
     # But I guess this is more explicit about what it does, and it generalizes better to non-L2 losses.)
     #idea is that we build up some matrix Q such that Q @ [class_comps ; aug_comps; offset] = [vecs ; 0 ; 0]
@@ -64,18 +95,20 @@ def do_direction_decomposition(classIDs, augIDs, pair2vec):
     #the last 2 rows of Q force class_comps and aug_comps to be centered
     #(no, this constraint does not degrade the quality of any solution)
 
-    Q = build_Q(len(classIDs), len(augIDs))
+    pairs = sorted(pair2vec.keys())
+    classIDs = sorted(set([p[0] for p in pairs]))
+    augIDs = sorted(set([p[1] for p in pairs]))
+
+    Q = build_Q_for_pairs(pairs)
 
     #make target
-    embedding_size = len(pair2vec[sorted(pair2vec.keys())[0]]) #yes, this is somewhat sloppy
-    Y = np.zeros((len(classIDs) * len(augIDs) + 2, embedding_size))
-    for i, classID in enumerate(classIDs):
-        for j, augID in enumerate(augIDs):
-            t = i * len(augIDs) + j
-            Y[t,:] = pair2vec[(classID, augID)]
+    embedding_size = len(pair2vec[pairs[0]]) #yes, this is somewhat sloppy
+    Y = np.zeros((len(pairs) + 2, embedding_size))
+    for t, p in enumerate(pairs):
+        Y[t,:] = pair2vec[p]
 
     #solve
-    Xhat = np.dot(np.linalg.pinv(Q), Y)
+    Xhat = np.linalg.pinv(Q) @ Y
 
     #gather learned directions/components
     outputA = {}
@@ -89,7 +122,7 @@ def do_direction_decomposition(classIDs, augIDs, pair2vec):
         outputA['aug_comps'][augID] = copy.deepcopy(Xhat[len(classIDs) + j,:])
 
     #PCA on residuals
-    residuals = (np.dot(Q, Xhat) - Y)[:-2,:]
+    residuals = ((Q @ Xhat) - Y)[:-2,:]
     outputB = compute_PCA(residuals)
 
     return outputA, outputB
@@ -188,10 +221,25 @@ def analyze_pair2vec_spreads(pair2vec):
 def do_subspace_analysis_one_embedding_dict(class2filenames_dict, class2words_dict, aug_dict, embedding_dict, embedding_type, renormalize=False):
     assert(embedding_type in ['image', 'text'])
 
-    results = {}
 
     #gather into (classID, augID) pairs
     pair2vec = gather_embeddings(class2filenames_dict, class2words_dict, aug_dict, embedding_dict, embedding_type, renormalize=renormalize)
+
+    #do rest of analysis with helper function
+    results = do_subspace_analysis_one_embedding_dict_helper(pair2vec, embedding_type, renormalize=renormalize)
+
+    return results
+
+#in case of text, pair2vec should map (classID, augID) to a single vector
+#in case of images, pair2vec should map (classID, augID) to a list of vectors
+def do_subspace_analysis_one_embedding_dict_helper(pair2vec, embedding_type):
+    assert(embedding_type in ['image', 'text'])
+
+    results = {}
+
+    classIDs = sorted(set([p[0] for p in sorted(pair2vec.keys())]))
+    augIDs = sorted(set([p[1] for p in sorted(pair2vec.keys())]))
+
     if embedding_type == 'image':
         pair2vec, results['deviation_PCA'] = reduce_image(pair2vec)
 
@@ -199,16 +247,14 @@ def do_subspace_analysis_one_embedding_dict(class2filenames_dict, class2words_di
     results['class_center_PCA'], results['aug_center_PCA'], results['total_PCA'] = analyze_pair2vec_spreads(pair2vec)
 
     #decompose into directions, and look at the spread of the residuals
-    classIDs = sorted(class2filenames_dict.keys())
-    augIDs = sorted(aug_dict.keys())
-    direction_decomp, results['direction_residual_PCA'] = do_direction_decomposition(classIDs, augIDs, pair2vec)
+    direction_decomp, results['direction_residual_PCA'] = do_direction_decomposition(pair2vec)
     results['direction_decomp'] = direction_decomp
 
     #now do PCA on the directions and check if they live in orthogonal subspaces
     results['class_comp_PCA'] = compute_PCA(np.array([direction_decomp['class_comps'][classID] for classID in classIDs]))
     results['aug_comp_PCA'] = compute_PCA(np.array([direction_decomp['aug_comps'][augID] for augID in augIDs]))
     results['class_aug_comp_PCA_cossims'] = np.dot(results['class_comp_PCA']['components'], results['aug_comp_PCA']['components'].T)
-    
+
     return results
 
 def do_subspace_analysis(base_dir, embedding_dict_filename_prefix, stats_dict_filename):

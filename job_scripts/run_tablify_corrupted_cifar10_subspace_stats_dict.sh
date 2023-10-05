@@ -1,0 +1,21 @@
+#!/bin/bash -l
+
+#$ -P ivc-ml
+#$ -pe omp 1
+#$ -l h_rt=0:29:59
+#$ -N tablify_corrupted_cifar10_subspace_stats_dict
+#$ -j y
+#$ -m ea
+
+module load miniconda
+conda activate vislang-domain-exploration
+cd ~/data/vislang-domain-exploration
+python tablify_corrupted_cifar10_subspace_stats_dict.py ../vislang-domain-exploration-data/ToyExperiments/experiment_CorruptedCIFAR10BaselineParamsLR5BatchSize64DomainlessTextProp50
+python tablify_corrupted_cifar10_subspace_stats_dict.py ../vislang-domain-exploration-data/ToyExperiments/experiment_CC10DomainlessTextProp50DisentanglementOrthoLambda100_0
+python tablify_corrupted_cifar10_subspace_stats_dict.py ../vislang-domain-exploration-data/ToyExperiments/experiment_CC10DomainlessTextProp50DisentanglementLambda100_0
+python tablify_corrupted_cifar10_subspace_stats_dict.py ../vislang-domain-exploration-data/ToyExperiments/experiment_CC10DomainlessTextProp50DisentanglementOrthoLambda10_0
+python tablify_corrupted_cifar10_subspace_stats_dict.py ../vislang-domain-exploration-data/ToyExperiments/experiment_CC10DomainlessTextProp50DisentanglementLambda10_0
+python tablify_corrupted_cifar10_subspace_stats_dict.py ../vislang-domain-exploration-data/ToyExperiments/experiment_CC10DomainlessTextProp50DisentanglementOrthoLambda1_0
+python tablify_corrupted_cifar10_subspace_stats_dict.py ../vislang-domain-exploration-data/ToyExperiments/experiment_CC10DomainlessTextProp50DisentanglementLambda1_0
+python tablify_corrupted_cifar10_subspace_stats_dict.py ../vislang-domain-exploration-data/ToyExperiments/experiment_CC10DomainlessTextProp50DisentanglementOrthoLambda0_1
+python tablify_corrupted_cifar10_subspace_stats_dict.py ../vislang-domain-exploration-data/ToyExperiments/experiment_CC10DomainlessTextProp50DisentanglementLambda0_1

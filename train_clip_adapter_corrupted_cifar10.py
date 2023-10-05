@@ -13,9 +13,10 @@ from compute_CLIP_embeddings import write_to_log_file
 from experiment_params.param_utils import get_params_key, get_train_type
 from clip_training_utils import grab_clip_backbones, add_to_backbone_gradients, add_to_backbone_gradients_smallbatch
 from corrupted_cifar10_input_pair_dataset import CorruptedCIFAR10InputPairDataset
+from corrupted_cifar10_disentanglement_text_dataset import CorruptedCIFAR10DisentanglementTextDataset
 from experiment_params.corrupted_cifar10_params import grab_params
 from clip_adapter_model import CLIPAdapterModel
-
+from disentanglement_utils import DisentanglementModel
 
 #from finetune_clip_on_domain_pure_batches import get_model_optimizer_scheduler, is_at_fractional_checkpoint
 
@@ -45,6 +46,17 @@ def get_data_genny(params, image_adapter_input_dict_filename, text_adapter_input
     dataset = CorruptedCIFAR10InputPairDataset(p, image_adapter_input_dict_filename, text_adapter_input_dict_filename, class_domain_dict_filename)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=p.clip_batch_size, shuffle=True, drop_last=True, num_workers=num_workers)
     return genny_fn(dataloader), len(dataloader)
+
+def get_disentanglement_dataset_and_genny(params, text_adapter_input_dict_filename, splits_filename, split_type='trivial', split_index=None, num_workers=0):
+    p = params
+    if p.disentanglement_modality == 'text':
+        dataset = CorruptedCIFAR10DisentanglementTextDataset(p,text_adapter_input_dict_filename,splits_filename,split_type=split_type,split_index=split_index)
+    else:
+        assert(False) #not yet supported
+
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=min(p.disentanglement_batch_size, len(dataset)), shuffle=True, drop_last=True, num_workers=num_workers)
+    data_genny = genny_fn(dataloader)
+    return dataset, data_genny
 
 def save_checkpoint_disentanglement(model, optimizer, scheduler, epoch, step_within_epoch, checkpoint_prefix, telemetry, telemetry_filename, is_final=False):
     checkpoint = {'epoch':epoch, 'step_within_epoch':step_within_epoch, 'model_state_dict':{}, 'optimizer_state_dict':{}, 'scheduler_state_dict':{}}
@@ -112,7 +124,7 @@ def get_model_optimizer_scheduler(params, checkpoint_prefix, epoch_length):
     checkpoint_filenames = sorted(glob.glob(checkpoint_prefix + '-*-*.pth'))
     checkpoint_epoch_step_list = [get_checkpoint_epoch_step(checkpoint_filename) for checkpoint_filename in checkpoint_filenames]
     if len(checkpoint_epoch_step_list) == 0:
-        return model, temperature, optimizer, scheduler, 0, 0, False
+        return model, temperature, optimizer, scheduler, 0, 0, False, None
     else:
         epoch_step_filename_list = [(epoch, step, filename) for (epoch, step), filename in zip(checkpoint_epoch_step_list, checkpoint_filenames)]
         _, __, best_filename = sorted(epoch_step_filename_list, reverse=True)[0]
@@ -124,21 +136,62 @@ def get_model_optimizer_scheduler(params, checkpoint_prefix, epoch_length):
         scheduler.load_state_dict(checkpoint['scheduler_state_dict']['main'])
         epoch = checkpoint['epoch']
         step_within_epoch = checkpoint['step_within_epoch']
-        return model, temperature, optimizer, scheduler, epoch, step_within_epoch, True
+        return model, temperature, optimizer, scheduler, epoch, step_within_epoch, True, checkpoint
 
 #if you leave disentanglement_dataset as None and it turns out there isn't an existing checkpoint, then this WILL crash!
 #returns model, temperature, optimizer, scheduler, epoch, step_within_epoch, is_on_loaded_checkpoint
-def get_model_optimizer_scheduler_disentanglement(params, checkpoint_prefix, epoch_length):
+def get_model_optimizer_scheduler_disentanglement(params, checkpoint_prefix, epoch_length, disentanglement_dataset=None, num_workers=0):
     p = params
 
     #get the main CLIP stuff
-    main_model, temperature, main_optimizer, main_scheduler, epoch, step_within_epoch, is_on_loaded_checkpoint = get_model_optimizer_scheduler(p, checkpoint_prefix, epoch_length)
+    main_model, temperature, main_optimizer, main_scheduler, epoch, step_within_epoch, is_on_loaded_checkpoint, checkpoint = get_model_optimizer_scheduler(p, checkpoint_prefix, epoch_length)
 
-    #add in disentanglement
-    if p.do_disentanglement:
-        assert(False) #not yet implemented!
+    #return now if there's no disentanglement
+    if not p.do_disentanglement:
+        return {'main' : main_model}, temperature, {'main' : main_optimizer}, {'main' : main_scheduler}, epoch, step_within_epoch, is_on_loaded_checkpoint
+    #build disentanglement model
+    num_classes = len(disentanglement_dataset.classes)
+    num_domains = len(disentanglement_dataset.domains)
+    if checkpoint is None: #need to initialize disentanglement model from scratch
+        if p.disentanglement_modality == 'text':
+            backbone = main_model['text']
+        else:
+            assert(False)
 
-    return {'main' : main_model}, temperature, {'main' : main_optimizer}, {'main' : main_scheduler}, epoch, step_within_epoch, is_on_loaded_checkpoint
+        disentanglement_model = DisentanglementModel(p, num_classes, num_domains, EMBEDDING_SIZE, dataset=disentanglement_dataset, backbone=backbone, using_clip_adapter=True, num_workers=num_workers)
+    else: #no need to initialize, will just load the state-dict
+        disentanglement_model = DisentanglementModel(p, num_classes, num_domains, EMBEDDING_SIZE, dataset=None, backbone=None, using_clip_adapter=True, num_workers=num_workers)
+
+    disentanglement_model = disentanglement_model.to('cuda')
+
+    #disentanglement optimizer
+    if p.disentanglement_component_optimizer_type == 'Adam':
+        effective_learning_rate = p.disentanglement_component_learning_rate
+        if p.disentanglement_lambda > 0.0: #ensure that the components get updated at a consistent rate, regqardless of the value of lambda
+            effective_learning_rate = effective_learning_rate / p.disentanglement_lambda
+
+        disentanglement_optimizer = optim.Adam(disentanglement_model.parameters(), lr=effective_learning_rate)
+    else:
+        assert(False)
+
+    #disentanglement scheduler
+    if p.disentanglement_component_scheduler_type == 'none':
+        disentanglement_scheduler = None
+    else:
+        assert(False)
+
+    #set from checkpoint
+    if checkpoint is not None:
+        disentanglement_model.load_state_dict(checkpoint['model_state_dict']['disentanglement'])
+        disentanglement_optimizer.load_state_dict(checkpoint['optimizer_state_dict']['disentanglement'])
+        if disentanglement_scheduler is not None:
+            assert(False)
+
+    #return (both main and disentanglement)
+    my_model = {'main' : main_model, 'disentanglement' : disentanglement_model}
+    my_optimizer = {'main' : main_optimizer, 'disentanglement' : disentanglement_optimizer}
+    my_scheduler = {'main' : main_scheduler, 'disentanglement' : disentanglement_scheduler}
+    return my_model, temperature, my_optimizer, my_scheduler, epoch, step_within_epoch, is_on_loaded_checkpoint
 
 def is_at_fractional_checkpoint(params, epoch, step_in_epoch, epoch_length):
     p = params
@@ -150,17 +203,24 @@ def is_at_fractional_checkpoint(params, epoch, step_in_epoch, epoch_length):
 
     return False
 
-def train_clip_adapter_corrupted_cifar10(experiment_dir, image_adapter_input_dict_filename, text_adapter_input_dict_filename, train_class_domain_dict_filename, num_workers=0):
+def train_clip_adapter_corrupted_cifar10(experiment_dir, image_adapter_input_dict_filename, text_adapter_input_dict_filename, train_class_domain_dict_filename, splits_filename, split_type='trivial', split_index=None, num_workers=0):
     num_workers = int(num_workers)
     p = grab_params(get_params_key(experiment_dir))
     train_type = get_train_type(experiment_dir)
     assert(os.path.splitext(os.path.basename(image_adapter_input_dict_filename))[0].split('-')[-1] == 'images')
     assert(os.path.splitext(os.path.basename(image_adapter_input_dict_filename))[0].split('-')[-2] == train_type)
     assert(os.path.basename(os.path.dirname(train_class_domain_dict_filename)) == train_type)
-    assert(not p.do_disentanglement)
 
     #checkpoint_prefix
-    checkpoint_prefix = os.path.join(experiment_dir, 'checkpoints', 'checkpoint')
+    checkpoint_dir_suffix = ''
+    if split_type in ['easy_zeroshot', 'hard_zeroshot']:
+        assert(p.do_disentanglement)
+        split_index = int(split_index)
+        checkpoint_dir_suffix = '-%s-%d'%(split_type, split_index)
+    else:
+        assert(split_type == 'trivial')
+
+    checkpoint_prefix = os.path.join(experiment_dir, 'checkpoints' + checkpoint_dir_suffix, 'checkpoint')
     os.makedirs(os.path.dirname(checkpoint_prefix), exist_ok=True)
 
     #get generator that produces the batches
@@ -171,20 +231,24 @@ def train_clip_adapter_corrupted_cifar10(experiment_dir, image_adapter_input_dic
 
     #get generator for disentanglement loss
     #we'll basically ignore any concept of "epoch" for this, cuz there's no way it'll match up with the "main" epoch
+    disentanglement_dataset = None
     if p.do_disentanglement:
-        assert(False)
+        disentanglement_dataset, disentanglement_data_genny = get_disentanglement_dataset_and_genny(p, text_adapter_input_dict_filename, splits_filename, split_type=split_type, split_index=split_index, num_workers=num_workers)
 
     #get model, optimizer, etc., refreshing from latest checkpoint if there is one
     write_to_log_file('making/loading model...')
-    model,temperature,optimizer,scheduler,start_epoch,start_step_in_epoch,is_on_loaded_checkpoint = get_model_optimizer_scheduler_disentanglement(p,checkpoint_prefix,epoch_length)
-    
+    model,temperature,optimizer,scheduler,start_epoch,start_step_in_epoch,is_on_loaded_checkpoint = get_model_optimizer_scheduler_disentanglement(p,checkpoint_prefix,epoch_length,disentanglement_dataset=disentanglement_dataset,num_workers=num_workers)
+
     #setup telemetry, and refresh from any existing telemetry
     #telemetry is saved in save_checkpoint_disentanglement(), so everything should line up
     telemetry = {'epoch_length' : epoch_length, 'train_losses' : [], 'train_losses_main' : []}
     if p.do_disentanglement:
         telemetry['train_losses_disentanglement'] = []
 
-    telemetry_filename = os.path.join(experiment_dir, 'training_telemetry.pkl')
+    if p.do_closeness_loss:
+        telemetry['train_losses_closeness'] = []
+
+    telemetry_filename = os.path.join(experiment_dir, 'training_telemetry%s.pkl'%(checkpoint_dir_suffix))
     if os.path.exists(telemetry_filename):
         with open(telemetry_filename, 'rb') as f:
             telemetry = pickle.load(f)
@@ -218,9 +282,10 @@ def train_clip_adapter_corrupted_cifar10(experiment_dir, image_adapter_input_dic
             image_batch = (batch['image_input'].cuda(), batch['image_embedding'].cuda())
             text_batch = (batch['text_input'].cuda(), batch['text_embedding'].cuda())
             if p.do_disentanglement:
-                assert(False)
-                #disentanglement_batch = next(disentanglement_data_genny)
-                #disentanglement_X,disentanglement_classes,disentanglement_domains = disentanglement_batch['X'].cuda(),disentanglement_batch['class'].cuda(),disentanglement_batch['domain'].cuda()
+                disentanglement_batch = next(disentanglement_data_genny)
+                disentanglement_X = (disentanglement_batch['input'].cuda(), disentanglement_batch['embedding'].cuda())
+                disentanglement_classes = disentanglement_batch['class'].cuda()
+                disentanglement_domains = disentanglement_batch['domain'].cuda()
 
             optimizer['main'].zero_grad()
             if p.do_disentanglement:
@@ -233,18 +298,23 @@ def train_clip_adapter_corrupted_cifar10(experiment_dir, image_adapter_input_dic
 
             telemetry['train_losses_main'].append(loss_main.item())
 
+            loss = loss_main
             if p.do_disentanglement:
-                assert(False)
-                #if p.disentanglement_modality == 'text':
-                #    disentanglement_embeddings = model['main']['text'](disentanglement_X)
-                #else:
-                #    assert(False)
-                #
-                #loss_disentanglement = model['disentanglement'](disentanglement_embeddings, disentanglement_classes, disentanglement_domains)
-                #telemetry['train_losses_disentanglement'].append(loss_disentanglement.item())
-                #loss = loss_main + p.disentanglement_lambda * loss_disentanglement
-            else:
-                loss = loss_main
+                if p.disentanglement_modality == 'text':
+                    disentanglement_embeddings = model['main']['text'](disentanglement_X)
+                else:
+                    assert(False)
+
+                loss_disentanglement = model['disentanglement'](disentanglement_embeddings, disentanglement_classes, disentanglement_domains)
+                telemetry['train_losses_disentanglement'].append(loss_disentanglement.item())
+                loss = loss + p.disentanglement_lambda * loss_disentanglement
+
+            if p.do_closeness_loss:
+                image_embeddings = model['main']['image'](image_batch)
+                text_embeddings = model['main']['text'](text_batch)
+                loss_closeness = torch.mean(torch.sum(torch.square(image_embeddings / image_embeddings.norm(dim=1, keepdim=True) - text_embeddings / text_embeddings.norm(dim=1, keepdim=True)), dim=1))
+                telemetry['train_losses_closeness'].append(loss_closeness.item())
+                loss = loss + p.closeness_lambda * loss_closeness
 
             telemetry['train_losses'].append(loss.item())
 
@@ -252,7 +322,7 @@ def train_clip_adapter_corrupted_cifar10(experiment_dir, image_adapter_input_dic
             #this is a good thing, because "add_to_backbone_gradients" already did the necessary backprop there
             #but it's good to have this line, because in the future someone might do loss_main the normal way
             #in which case you'd want this line to backprop through loss_main
-            should_call_backward = p.do_disentanglement #change this if loss_main actually needs a backward() call
+            should_call_backward = p.do_disentanglement or p.do_closeness_loss #change this if loss_main actually needs a backward() call
             if should_call_backward:
                 loss.backward()
 
@@ -271,7 +341,7 @@ def train_clip_adapter_corrupted_cifar10(experiment_dir, image_adapter_input_dic
     write_to_log_file('done training')
 
 def usage():
-    print('Usage: python train_clip_adapter_corrupted_cifar10.py <experiment_dir> <image_adapter_input_dict_filename> <text_adapter_input_dict_filename> <train_class_domain_dict_filename> [<num_workers>=0]')
+    print('Usage: python train_clip_adapter_corrupted_cifar10.py <experiment_dir> <image_adapter_input_dict_filename> <text_adapter_input_dict_filename> <train_class_domain_dict_filename> <splits_filename> [<split_type="trivial">] [<split_index>=None] [<num_workers>=0]')
 
 if __name__ == '__main__':
     train_clip_adapter_corrupted_cifar10(*(sys.argv[1:]))

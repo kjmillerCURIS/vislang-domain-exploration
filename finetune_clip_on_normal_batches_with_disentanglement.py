@@ -199,6 +199,7 @@ def finetune_clip_on_normal_batches_with_disentanglement(experiment_dir, image_b
                 assert(False)
 
             loss_disentanglement = model['disentanglement'](disentanglement_embeddings, disentanglement_classes, disentanglement_domains)
+            loss_disentanglement = loss_disentanglement.half()
             telemetry['train_losses_disentanglement'].append(loss_disentanglement.item())
             loss = loss_main + p.disentanglement_lambda * loss_disentanglement
             telemetry['train_losses'].append(loss.item())
